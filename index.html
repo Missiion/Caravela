@@ -543,7 +543,7 @@
         /* Scroll seek hint */
         .scroll-seek-hint {
             position: absolute;
-            bottom: 8px;
+            top: 8px;
             left: 50%;
             transform: translateX(-50%);
             font-size: 0.52rem;
@@ -925,8 +925,8 @@
             50%      { opacity: 1; box-shadow: 3px 3px 0 rgba(100,160,255,0.5), 0 0 12px rgba(100,160,255,0.2); }
         }
 
-        /* ── SUN HINT (acima do relógio, primavera) ── */
-        .sun-hint {
+        /* ── SPRING HINT (acima do relógio, primavera) ── */
+        .spring-hint {
             position: fixed;
             bottom: 100px;
             left: 30px;
@@ -946,16 +946,16 @@
             display: none;
             opacity: 1;
             transition: opacity 0.6s ease;
-            animation: sunHintPulse 3s ease-in-out infinite;
+            animation: springHintPulse 3s ease-in-out infinite;
         }
-        .sun-hint.visible { display: block; }
-        .sun-hint.fading  { opacity: 0; animation: none; }
-        .sun-hint::before {
+        .spring-hint.visible { display: block; }
+        .spring-hint.fading  { opacity: 0; animation: none; }
+        .spring-hint::before {
             content: '☀';
             margin-right: 5px;
             opacity: 0.9;
         }
-        @keyframes sunHintPulse {
+        @keyframes springHintPulse {
             0%,100% { opacity: 0.7; }
             50%      { opacity: 1; box-shadow: 3px 3px 0 rgba(255,200,0,0.5), 0 0 14px rgba(255,200,0,0.2); }
         }
@@ -1183,7 +1183,7 @@
         .clock-widget,
         .ticker-bar,
         .snow-hint,
-        .sun-hint,
+        .spring-hint,
         .autumn-hint,
         .summer-hint,
         .mod-tab,
@@ -1195,7 +1195,7 @@
         body.hidden-mode .clock-widget,
         body.hidden-mode .ticker-bar,
         body.hidden-mode .snow-hint,
-        body.hidden-mode .sun-hint,
+        body.hidden-mode .spring-hint,
         body.hidden-mode .autumn-hint,
         body.hidden-mode .summer-hint,
         body.hidden-mode .mod-tab,
@@ -1383,7 +1383,7 @@
 
     <!-- SNOW HINT -->
     <div class="snow-hint"   id="snowHint">Type "snow" ❄</div>
-    <div class="sun-hint"    id="sunHint">Type "sun" ☀</div>
+    <div class="spring-hint"    id="springHint">Type "spring" ☀</div>
     <div class="autumn-hint" id="autumnHint">Type "autumn" 🍂</div>
     <div class="summer-hint" id="summerHint">Type "summer" 🌊</div>
 
@@ -1402,7 +1402,7 @@
         <div class="mod-tab-body">
             <div class="mod-tab-title">⚡ Moderation</div>
             <button class="mod-btn" id="modBtnForceSnowHint">❄ Force Snow Notice</button>
-            <button class="mod-btn" id="modBtnForceSunHint">☀ Force Sun Notice</button>
+            <button class="mod-btn" id="modBtnForceSpringHint">☀ Force Spring Notice</button>
             <button class="mod-btn" id="modBtnForceAutumnHint">🍂 Force Autumn Notice</button>
             <button class="mod-btn" id="modBtnForceSummerHint">🌊 Force Summer Notice</button>
             <div class="mod-tab-title" style="margin-top:6px">🖼 Images (Temp.)</div>
@@ -2066,8 +2066,8 @@
             function isSummer(){ const m=new Date().getMonth()+1; return m>=6&&m<=8; }
             function isAutumn(){ const m=new Date().getMonth()+1; return m>=9&&m<=11; }
 
-            const allHints = ['snowHint','sunHint','autumnHint','summerHint'].map(id=>document.getElementById(id));
-            const [snowHintEl,sunHintEl,autumnHintEl,summerHintEl] = allHints;
+            const allHints = ['snowHint','springHint','autumnHint','summerHint'].map(id=>document.getElementById(id));
+            const [snowHintEl,springHintEl,autumnHintEl,summerHintEl] = allHints;
 
             function dismissHint(el){
                 el.classList.add('fading');
@@ -2076,34 +2076,34 @@
             function clearOthers(except){ allHints.forEach(h=>{ if(h!==except) h.classList.remove('visible','fading'); }); }
 
             function showSnowHint(){   clearOthers(snowHintEl);   snowHintEl.classList.remove('fading');   snowHintEl.classList.add('visible'); }
-            function showSunHint(){    clearOthers(sunHintEl);    sunHintEl.classList.remove('fading');    sunHintEl.classList.add('visible'); }
+            function showSpringHint(){    clearOthers(springHintEl);    springHintEl.classList.remove('fading');    springHintEl.classList.add('visible'); }
             function showAutumnHint(){ clearOthers(autumnHintEl); autumnHintEl.classList.remove('fading'); autumnHintEl.classList.add('visible'); }
             function showSummerHint(){ clearOthers(summerHintEl); summerHintEl.classList.remove('fading'); summerHintEl.classList.add('visible'); }
 
             function hideSnowHint(){   dismissHint(snowHintEl); }
-            function hideSunHint(){    dismissHint(sunHintEl); }
+            function hideSpringHint(){    dismissHint(springHintEl); }
             function hideAutumnHint(){ dismissHint(autumnHintEl); }
             function hideSummerHint(){ dismissHint(summerHintEl); }
 
             snowHintEl.addEventListener('click',   hideSnowHint);
-            sunHintEl.addEventListener('click',    hideSunHint);
+            springHintEl.addEventListener('click',    hideSpringHint);
             autumnHintEl.addEventListener('click', hideAutumnHint);
             summerHintEl.addEventListener('click', hideSummerHint);
 
             window._showSnowHint   = showSnowHint;   window._hideSnowHint   = hideSnowHint;
-            window._showSunHint    = showSunHint;     window._hideSunHint    = hideSunHint;
+            window._showSpringHint    = showSpringHint;     window._hideSpringHint    = hideSpringHint;
             window._showAutumnHint = showAutumnHint;  window._hideAutumnHint = hideAutumnHint;
             window._showSummerHint = showSummerHint;  window._hideSummerHint = hideSummerHint;
 
             if(isWinter())      showSnowHint();
-            else if(isSpring()) showSunHint();
+            else if(isSpring()) showSpringHint();
             else if(isSummer()) showSummerHint();
             else if(isAutumn()) showAutumnHint();
 
             document.addEventListener('keydown', ()=>{
                 setTimeout(()=>{
                     if(window._snowActive)   hideSnowHint();
-                    if(window._sunActive)    hideSunHint();
+                    if(window._springActive)    hideSpringHint();
                     if(window._autumnActive) hideAutumnHint();
                     if(window._summerActive) hideSummerHint();
                 },80);
@@ -2135,7 +2135,7 @@
             });
 
             document.getElementById('modBtnForceSnowHint').addEventListener('click', () => { window._showSnowHint && window._showSnowHint(); });
-            document.getElementById('modBtnForceSunHint').addEventListener('click',  () => { window._showSunHint  && window._showSunHint();  });
+            document.getElementById('modBtnForceSpringHint').addEventListener('click',  () => { window._showSpringHint  && window._showSpringHint();  });
             document.getElementById('modBtnForceAutumnHint').addEventListener('click',()=> { window._showAutumnHint && window._showAutumnHint(); });
             document.getElementById('modBtnForceSummerHint').addEventListener('click',()=> { window._showSummerHint && window._showSummerHint(); });
 
@@ -2597,14 +2597,14 @@
 
         // ── Keyword trigger ──
         let keyBuffer = '';
-        let sunActive = false;
+        let springActive = false;
         let animating = false;
 
         document.addEventListener('keydown', (e) => {
             if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
             keyBuffer += e.key.toLowerCase();
-            if(keyBuffer.length > 5) keyBuffer = keyBuffer.slice(-5);
-            if(keyBuffer.endsWith('sun')){
+            if(keyBuffer.length > 6) keyBuffer = keyBuffer.slice(-6);
+            if(keyBuffer.endsWith('spring')){
                 // mutual exclusion
                 if(window._snowActive){
                     window._snowActive=false;
@@ -2618,11 +2618,11 @@
                     window._summerActive=false;
                     document.getElementById('summer-canvas').style.display='none';
                 }
-                sunActive = !sunActive;
-                window._sunActive = sunActive;
-                const d = sunActive ? 'block' : 'none';
+                springActive = !springActive;
+                window._springActive = springActive;
+                const d = springActive ? 'block' : 'none';
                 rayCanvas.style.display = springCanvas.style.display = d;
-                if(sunActive){
+                if(springActive){
                     initFlowers();
                     if(!animating){ animating = true; draw(); }
                 } else {
@@ -2813,7 +2813,7 @@
         // ═══════════════════════════════════════════
         let t = 0;
         function draw(){
-            if(!sunActive){ animating = false; return; }
+            if(!springActive){ animating = false; return; }
             requestAnimationFrame(draw);
             t++;
 
@@ -2879,8 +2879,8 @@
                     window._snowActive=false;
                     document.getElementById('snow-canvas').style.display='none';
                 }
-                if(window._sunActive){
-                    window._sunActive=false;
+                if(window._springActive){
+                    window._springActive=false;
                     document.getElementById('sun-canvas').style.display='none';
                     document.getElementById('spring-canvas').style.display='none';
                 }
@@ -3064,8 +3064,8 @@
             kb += e.key.toLowerCase(); if(kb.length>9) kb=kb.slice(-9);
             if(kb.endsWith('summer')){
                 // mutual exclusion: deactivate others
-                if(window._sunActive){
-                    window._sunActive=false;
+                if(window._springActive){
+                    window._springActive=false;
                     document.getElementById('sun-canvas').style.display='none';
                     document.getElementById('spring-canvas').style.display='none';
                 }
@@ -3263,8 +3263,8 @@
             if(keyBuffer.length > 6) keyBuffer = keyBuffer.slice(-6);
             if(keyBuffer.endsWith('snow')){
                 // mutual exclusion
-                if(window._sunActive){
-                    window._sunActive=false;
+                if(window._springActive){
+                    window._springActive=false;
                     document.getElementById('sun-canvas').style.display='none';
                     document.getElementById('spring-canvas').style.display='none';
                 }
