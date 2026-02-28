@@ -1212,9 +1212,9 @@
     <div class="bg-layer bg-night"></div>
     <canvas id="night-canvas" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:-1;pointer-events:none;display:none;"></canvas>
 
-    <audio id="rainAudio" src="https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Som_chuva_loop.mp3" loop></audio>
-    <audio id="dryerAudio" src="https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/som_secador.mp3" loop></audio>
-    <audio id="windAudio" src="https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Som_do_vento.mp3" loop></audio>
+    <audio id="rainAudio" src="https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Som_chuva_loop.mp3" loop preload="auto" crossorigin="anonymous"></audio>
+    <audio id="dryerAudio" src="https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/som_secador.mp3" loop preload="auto" crossorigin="anonymous"></audio>
+    <audio id="windAudio" src="https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Som_do_vento.mp3" loop preload="auto" crossorigin="anonymous"></audio>
     <div class="rain-container" id="rainBox"></div>
 
     <div class="hub-container" id="parallax-box">
@@ -1315,7 +1315,7 @@
 
     <!-- PLAYER DE MÚSICA FIXO -->
     <div class="music-player-wrapper">
-        <audio id="musicAudio"></audio>
+        <audio id="musicAudio" preload="auto" crossorigin="anonymous"></audio>
 
         <div class="player-stage" id="playerStage">
         <!-- Cards are injected ONCE via JS to allow CSS animations -->
@@ -1781,6 +1781,7 @@
             });
             
             musicAudio.src = playlist[currentTrackIndex].src;
+            musicAudio.load(); // Firefox fix: trigger buffering immediately
             updateCards();
         }
 
@@ -1821,10 +1822,22 @@
 
         function togglePlay() {
             if (musicAudio.paused) {
-                musicAudio.play().then(() => {
-                    isPlaying = true;
-                    updateCards();
-                }).catch(e => console.log("Erro audio:", e));
+                // Firefox fix: if not loaded yet, load first then play
+                if (musicAudio.readyState < 2) {
+                    musicAudio.load();
+                    musicAudio.addEventListener('canplay', function onCanPlay() {
+                        musicAudio.removeEventListener('canplay', onCanPlay);
+                        musicAudio.play().then(() => {
+                            isPlaying = true;
+                            updateCards();
+                        }).catch(e => console.log("Erro audio:", e));
+                    }, { once: true });
+                } else {
+                    musicAudio.play().then(() => {
+                        isPlaying = true;
+                        updateCards();
+                    }).catch(e => console.log("Erro audio:", e));
+                }
             } else {
                 musicAudio.pause();
                 isPlaying = false;
@@ -1835,8 +1848,12 @@
         function changeTrack(newIndex) {
             currentTrackIndex = newIndex;
             musicAudio.src = playlist[currentTrackIndex].src;
+            musicAudio.load(); // Firefox fix: explicit load call
             if (isPlaying) {
-                musicAudio.play().catch(e => console.log("Erro audio:", e));
+                musicAudio.addEventListener('canplay', function onCanPlay() {
+                    musicAudio.removeEventListener('canplay', onCanPlay);
+                    musicAudio.play().catch(e => console.log("Erro audio:", e));
+                }, { once: true });
             }
             updateCards();
         }
@@ -1936,12 +1953,20 @@
         let isStorming = false;
 
         function startStorm() {
-            audio.play().then(() => {
-                rainBox.style.opacity = '1';
-                rainBtn.classList.add('sound-on');
-                isStorming = true;
-                syncSoundPanel();
-            }).catch(e => { console.log("Bloqueio de áudio."); });
+            const tryPlay = () => {
+                audio.play().then(() => {
+                    rainBox.style.opacity = '1';
+                    rainBtn.classList.add('sound-on');
+                    isStorming = true;
+                    syncSoundPanel();
+                }).catch(e => { console.log("Bloqueio de áudio."); });
+            };
+            if (audio.readyState < 2) {
+                audio.load();
+                audio.addEventListener('canplay', tryPlay, { once: true });
+            } else {
+                tryPlay();
+            }
         }
         function stopStorm() {
             audio.pause();
@@ -1962,9 +1987,12 @@
         let isDryer = false;
         dryerBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (isDryer) { dryerAudio.pause(); dryerBtn.classList.remove('sound-on'); isDryer = false; }
-            else { dryerAudio.play().catch(() => {}); dryerBtn.classList.add('sound-on'); isDryer = true; }
-            syncSoundPanel();
+            if (isDryer) { dryerAudio.pause(); dryerBtn.classList.remove('sound-on'); isDryer = false; syncSoundPanel(); }
+            else {
+                const tryPlay = () => dryerAudio.play().then(() => { dryerBtn.classList.add('sound-on'); isDryer = true; syncSoundPanel(); }).catch(() => {});
+                if (dryerAudio.readyState < 2) { dryerAudio.load(); dryerAudio.addEventListener('canplay', tryPlay, { once: true }); }
+                else tryPlay();
+            }
         });
 
         // === VENTO ===
@@ -1974,9 +2002,12 @@
         let isWind = false;
         windBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (isWind) { windAudio.pause(); windBtn.classList.remove('sound-on'); isWind = false; }
-            else { windAudio.play().catch(() => {}); windBtn.classList.add('sound-on'); isWind = true; }
-            syncSoundPanel();
+            if (isWind) { windAudio.pause(); windBtn.classList.remove('sound-on'); isWind = false; syncSoundPanel(); }
+            else {
+                const tryPlay = () => windAudio.play().then(() => { windBtn.classList.add('sound-on'); isWind = true; syncSoundPanel(); }).catch(() => {});
+                if (windAudio.readyState < 2) { windAudio.load(); windAudio.addEventListener('canplay', tryPlay, { once: true }); }
+                else tryPlay();
+            }
         });
 
         // === AMBIENT VOLUME SYSTEM ===
