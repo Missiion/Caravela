@@ -1,0 +1,495 @@
+/* ═══════════════════════════════════════════════════════════════
+   GAME-LAUNCHER.CSS  — v4
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Overlay de ecrã completo — glassmorphism ── */
+#gameLaunchOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    /* Glassmorphism: hub visível por baixo, desfocado */
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+    opacity: 0;
+}
+#gameLaunchOverlay.gl-active {
+    pointer-events: auto;
+    opacity: 1;
+}
+
+/* ── Entrada morse/neon ── */
+#gameLaunchOverlay.gl-active #glTopBar,
+#gameLaunchOverlay.gl-active #gameLaunchFrame {
+    animation: glMorseNeonIn 0.44s steps(1) forwards;
+}
+#gameLaunchOverlay.gl-active #glTopBar        { animation-delay: 0.00s; }
+#gameLaunchOverlay.gl-active #gameLaunchFrame { animation-delay: 0.20s; }
+
+@keyframes glMorseNeonIn {
+    0%   { opacity: 0; }
+    10%  { opacity: 1; }
+    18%  { opacity: 0; }
+    28%  { opacity: 1; }
+    36%  { opacity: 0; }
+    44%  { opacity: 0; }
+    54%  { opacity: 1; }
+    60%  { opacity: 0; }
+    70%  { opacity: 1; }
+    78%  { opacity: 0; }
+    88%  { opacity: 1; }
+    100% { opacity: 1; }
+}
+
+/* ── Saída morse/neon ── */
+#gameLaunchOverlay.gl-exit #glTopBar,
+#gameLaunchOverlay.gl-exit #gameLaunchFrame {
+    animation: glMorseNeonOut 0.44s steps(1) forwards;
+}
+#gameLaunchOverlay.gl-exit #gameLaunchFrame { animation-delay: 0.00s; }
+#gameLaunchOverlay.gl-exit #glTopBar        { animation-delay: 0.20s; }
+#gameLaunchOverlay.gl-exit {
+    animation: glOverlayFadeOut 0.68s steps(1) forwards;
+}
+
+@keyframes glMorseNeonOut {
+    0%   { opacity: 1; }
+    12%  { opacity: 0; }
+    22%  { opacity: 1; }
+    34%  { opacity: 0; }
+    40%  { opacity: 1; }
+    56%  { opacity: 0; }
+    70%  { opacity: 0; }
+    82%  { opacity: 1; }
+    90%  { opacity: 0; }
+    100% { opacity: 0; }
+}
+
+@keyframes glOverlayFadeOut {
+    0%   { opacity: 1; }
+    94%  { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* ── Iframe — fundo transparente para deixar passar o glassmorphism ── */
+#gameLaunchFrame {
+    width: 100%;
+    flex: 1;
+    border: none;
+    display: block;
+    background: transparent;
+    cursor: auto;
+}
+
+/* ── Top bar ── */
+#glTopBar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
+    background: rgba(0, 0, 0, 0.92);
+    border-bottom: 1px solid var(--cor-borda-principal, #283593);
+    box-shadow: 0 2px 0 var(--cor-sombra, #b71c1c);
+    flex-shrink: 0;
+    z-index: 5001;
+    height: 38px;
+}
+
+#glBackBtn {
+    background: var(--cor-botao-bg, rgba(0,0,0,0.5));
+    border: 1px solid var(--cor-borda-principal, #283593);
+    box-shadow: 2px 2px 0 var(--cor-sombra, #b71c1c);
+    color: rgba(255,255,255,0.92);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 5px 14px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.12s;
+    flex-shrink: 0;
+}
+#glBackBtn:hover {
+    background: var(--cor-borda-principal, #283593);
+    transform: translate(-1px, -1px);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TÍTULO DO JOGO NO CABEÇALHO — variáveis fáceis de editar
+   ───────────────────────────────────────────────────────────────
+   --gl-title-size      → tamanho da fonte        (default: 0.5rem)
+   --gl-title-spacing   → espaço entre letras     (default: 3px)
+   --gl-title-color     → cor                     (default: branco 80%)
+   --gl-title-margin-l  → margem ao botão BACK    (default: 0px)
+   --gl-title-margin-r  → margem aos ícones de som(default: 0px)
+   ═══════════════════════════════════════════════════════════════ */
+#glTopBar {
+    --gl-title-size:     0.5rem;
+    --gl-title-spacing:  3px;
+    --gl-title-color:    rgba(255,255,255,0.8);
+    --gl-title-margin-l: 0px;
+    --gl-title-margin-r: 0px;
+}
+
+#glGameTitle {
+    color:          var(--gl-title-color);
+    font-family:    'Press Start 2P', monospace, 'Inter', sans-serif;
+    font-size:      var(--gl-title-size);
+    letter-spacing: var(--gl-title-spacing);
+    text-transform: uppercase;
+    margin-left:    var(--gl-title-margin-l);
+    margin-right:   var(--gl-title-margin-r);
+}
+
+@keyframes glTitleFloat {
+    0%,100% { transform: translateY(0px);   }
+    50%      { transform: translateY(-4px);  }
+}
+
+/* ── Flex spacer entre título e dock de sons ── */
+#glTopBar .gl-spacer {
+    flex: 1;
+}
+
+/* Sons no header - inline no #glTopBar, ordem: Wind > Dryer > Rain */
+#glSoundDock {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    /* 8px entre cada botao — replica o espacamento do hub */
+    gap: 8px;
+
+    /* ──────────────────────────────────────────────────────
+       TAMANHO DOS ICONS NO HEADER DO JOGO
+       Muda este valor para ajustar os 3 icons em simultâneo.
+       O hub usa 30px — aumenta ou diminui à vontade.
+    ────────────────────────────────────────────────────── */
+    --tamanho-nuvem: 30px;
+}
+
+/* snd-btn-wrap: sem dimensoes proprias — o rain-toggle dentro ja tem
+   width/height = var(--tamanho-nuvem) via styles.css.
+   So precisamos de anular o position:absolute e o bottom:15px. */
+#glSoundDock .snd-btn-wrap {
+    position: relative !important;
+    bottom:   auto     !important;
+    right:    auto     !important;
+    left:     auto     !important;
+    top:      auto     !important;
+    /* flex-direction:column ja e o default do hub — nao alterar */
+}
+
+/* Popup abre ABAIXO (unico override ao hub) */
+#glSoundDock .snd-vol-popup {
+    bottom: auto             !important;
+    top:    calc(100% + 4px) !important;
+}
+
+/* ::after estende-se para cima para manter hover entre botao e popup */
+#glSoundDock .snd-vol-popup::after {
+    top:    auto !important;
+    bottom: 100% !important;
+    height: 12px !important;
+}
+
+/* Elevar player + relógio por cima do overlay APENAS quando UI visível */
+body.game-open:not(.hidden-mode) .music-player-wrapper,
+body.game-open:not(.hidden-mode) .clock-widget,
+body.game-open:not(.hidden-mode) .vhs-next-wrap {
+    z-index: 5100 !important;
+}
+
+/* ── Desativar elementos do hub durante o jogo ── */
+body.game-open .ticker-bar,
+body.game-open #modTab,
+body.game-open .hub-container,
+body.game-open .rain-container,
+body.game-open #physics-hint,
+body.game-open #physicsImg {
+    pointer-events: none;
+}
+
+/* eye-btn e bg-shuffle-btn sempre visíveis e funcionais durante o jogo */
+body.game-open .eye-btn,
+body.game-open .bg-shuffle-btn {
+    z-index: 5200 !important;
+    pointer-events: auto !important;
+}
+
+/* hidden-mode durante o jogo: esconde tudo o que é do jogo,
+   incluindo o overlay (blur + iframe + header + sons) */
+body.game-open.hidden-mode #gameLaunchOverlay {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: opacity 0.5s ease !important;
+}
+
+/* ── Estações: desativar pointer-events durante o jogo ── */
+body.game-open #sun-canvas,
+body.game-open #spring-canvas,
+body.game-open #autumn-canvas,
+body.game-open #summer-canvas,
+body.game-open #snow-canvas,
+body.game-open #night-canvas {
+    pointer-events: none;
+}
+
+body.game-open .snow-hint,
+body.game-open .spring-hint,
+body.game-open .autumn-hint,
+body.game-open .summer-hint {
+    display: none !important;
+}
+
+
+/* TRANSIÇÕES — REMOVIDAS (a substituir por novas no futuro) */
+
+
+/* ── Temas ── */
+body.theme-emerald #glTopBar,
+body.theme-emerald #glBackBtn {
+    --cor-borda-principal: #1b5e20;
+    --cor-sombra: #f9a825;
+}
+body.theme-mono #glTopBar,
+body.theme-mono #glBackBtn {
+    --cor-borda-principal: #6b6b6b;
+    --cor-sombra: #1e1e1e;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BUG FIX — PARALLAX FREEZE durante o jogo
+   ───────────────────────────────────────────────────────────────
+   O listener mousemove está em document.body, por isso continua
+   a reagir quando o rato passa pelo cabeçalho do launcher.
+   Esta regra anula o transform inline que o JS escreve e congela
+   o hub na posição neutra enquanto body.game-open estiver activo.
+   Quando o jogo fechar, o CSS deixa de ter precedência e o
+   parallax retoma normalmente.
+   ═══════════════════════════════════════════════════════════════ */
+body.game-open #parallax-box {
+    transform: rotateY(0deg) rotateX(0deg) !important;
+    transition: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BUG FIX — SVG / CSS ANIMATIONS FREEZE durante o jogo
+   ───────────────────────────────────────────────────────────────
+   Qualquer elemento animado fora do overlay (ex: SVG do pac-man,
+   ícones no hub, etc.) continua a correr porque pointer-events:none
+   não suspende animações CSS.
+   Pausa todas as animações CSS na página enquanto o jogo estiver
+   aberto — o browser retoma automaticamente do ponto onde ficaram
+   assim que body.game-open for removido.
+   O overlay e os seus filhos são explicitamente excluídos para que
+   as animações de entrada/saída do launcher não sejam afectadas.
+   ═══════════════════════════════════════════════════════════════ */
+body.game-open *:not(#gameLaunchOverlay):not(#gameLaunchOverlay *):not(.vhs-eq-bar) {
+    animation-play-state: paused !important;
+}
+
+/* ── Excepções: animações que devem continuar durante o jogo ── */
+/* EQ do music player */
+body.game-open .vhs-eq-bar {
+    animation-play-state: running !important;
+}
+
+/* ── Bandeira de idioma — visível no jogo e afetada pelo olho ── */
+body.game-open #langToggleBtn {
+    z-index: 5100 !important;
+    pointer-events: auto !important;
+}
+body.game-open.hidden-mode #langToggleBtn {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CONFIG PANEL — Painel de edição visual do launcher
+   Sempre no DOM, visível APENAS quando ativado pelo mod panel.
+   Por defeito tem .cfg-hidden → opacity:0, pointer-events:none.
+   ═══════════════════════════════════════════════════════════════ */
+
+#glConfigTab {
+    position: fixed;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    z-index: 5300;
+    display: flex;
+    align-items: stretch;
+}
+
+/* Escondido por defeito */
+#glConfigTab.cfg-hidden {
+    pointer-events: none;
+    opacity: 0;
+}
+#glConfigTab:not(.cfg-hidden) {
+    pointer-events: auto;
+    opacity: 1;
+}
+
+/* Botão língua lateral */
+#glConfigToggle {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    background: rgba(0,0,0,0.88);
+    border: 1px solid var(--cor-borda-principal, #283593);
+    border-right: none;
+    box-shadow: -2px 0 0 var(--cor-sombra, #b71c1c);
+    color: rgba(255,255,255,0.55);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.38rem;
+    letter-spacing: 2px;
+    padding: 14px 6px;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s, background 0.15s;
+    flex-shrink: 0;
+}
+#glConfigToggle:hover {
+    color: rgba(255,255,255,0.9);
+    background: rgba(20,20,40,0.97);
+}
+#glConfigToggle .cfg-icon {
+    display: block;
+    writing-mode: horizontal-tb;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    opacity: 0.7;
+}
+
+/* Painel deslizante */
+#glConfigPanel {
+    width: 0;
+    overflow: hidden;
+    transition: width 0.3s cubic-bezier(0.22,1,0.36,1);
+    background: rgba(4,4,12,0.97);
+    border: 1px solid var(--cor-borda-principal, #283593);
+    border-right: none;
+    box-shadow: -3px 0 0 var(--cor-sombra, #b71c1c), -12px 0 40px rgba(0,0,0,0.6);
+}
+#glConfigPanel.cfg-open { width: 240px; }
+
+#glConfigInner {
+    width: 240px;
+    padding: 14px 0 18px;
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cor-borda-principal, #283593) transparent;
+}
+
+.cfg-panel-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.38rem;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    padding: 0 16px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 4px;
+}
+.cfg-section {
+    padding: 10px 16px 4px;
+}
+.cfg-section + .cfg-section {
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 6px;
+    padding-top: 12px;
+}
+.cfg-section-label {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.32rem;
+    letter-spacing: 2px;
+    color: var(--cor-borda-principal, #283593);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    filter: brightness(1.7);
+}
+.cfg-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 9px;
+}
+.cfg-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.58rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.5);
+    flex-shrink: 0;
+    min-width: 80px;
+}
+.cfg-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 3px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+.cfg-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--cor-borda-principal, #283593);
+    filter: brightness(1.8);
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.cfg-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
+.cfg-slider::-moz-range-thumb {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--cor-borda-principal, #283593);
+    border: none;
+    filter: brightness(1.8);
+    cursor: pointer;
+}
+.cfg-value {
+    font-family: 'Inter', monospace;
+    font-size: 0.58rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.75);
+    min-width: 38px;
+    text-align: right;
+}
+.cfg-reset {
+    display: block;
+    width: 100%;
+    margin-top: 14px;
+    padding: 7px 0;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.3);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.3rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.cfg-reset:hover {
+    border-color: var(--cor-sombra, #b71c1c);
+    color: rgba(255,255,255,0.7);
+}
+.cfg-footer {
+    padding: 12px 16px 0;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.5rem;
+    color: rgba(255,255,255,0.18);
+    line-height: 1.6;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 10px;
+}
