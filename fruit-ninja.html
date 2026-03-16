@@ -2875,6 +2875,23 @@ function fnApplyLang(t) {
     setTimeout(function () { clearInterval(_retryInterval); }, 3000);
 })();
 
+// Retry loop — pede a lang ao pai até receber FN_SET_LANG com conteúdo.
+(function pedirLangComRetry() {
+    if (!window.parent || window.parent === window) return;
+    var _langRecebida = false;
+    var _langInterval = setInterval(function () {
+        if (_langRecebida) { clearInterval(_langInterval); return; }
+        window.parent.postMessage({ tipo: 'PEDIR_TEMA' }, '*'); // reutiliza PEDIR_TEMA que já envia a lang
+    }, 80);
+    setTimeout(function () { clearInterval(_langInterval); }, 4000);
+    // Marca como recebida quando fnApplyLang for chamada com dados reais
+    var _origApply = fnApplyLang;
+    fnApplyLang = function(t) {
+        if (t && t.fnPlay && t.fnPlay !== 'fnPlay') _langRecebida = true;
+        _origApply(t);
+    };
+})();
+
 // ── NIGHT GARDEN MENU BACKGROUND ─────────────────────────────
 (function() {
   const bgCanvas = document.getElementById('menuBgCanvas');
