@@ -6,6 +6,7 @@
     <title>Master HUB</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="suika.css">
+    <link rel="stylesheet" href="game-launcher.css">
 </head>
 <body>
 
@@ -58,7 +59,7 @@
             <div class="suika-banner-wrap">
                 <div id="suikaLogoBtn" class="suika-banner">
                     <div class="suika-banner-shine"></div>
-                    <span class="suika-banner-title">Suika!</span>
+                    <span class="suika-banner-title">Games!</span>
                     <span class="suika-banner-tagline" id="suikaBannerText"></span>
                     <span class="suika-banner-arrow">▶</span>
                 </div>
@@ -344,6 +345,8 @@
             <div class="mod-tab-title" style="margin-top:6px">&#9997; Signature</div>
             <button class="mod-btn" id="modBtnForceSigs">&#128220; Force Show Signatures</button>
             <button class="mod-btn" id="modBtnResetSig">&#128465; Reset Signature State</button>
+            <div class="mod-tab-title" style="margin-top:6px">&#9881; Config Panel</div>
+            <button class="mod-btn" id="modBtnCfgPanel">&#128396; Toggle Layout Editor</button>
         </div>
     </div>
 
@@ -374,6 +377,30 @@
 
         const app = initializeApp(firebaseConfig);
         const db  = getFirestore(app);
+
+        // Resolve nome único: se já existir outro doc com esse nome (diferente browserId),
+        // adiciona o número de ocorrências ex: "Caravela" → "Caravela2", "Caravela3", etc.
+        window._sigResolveUniqueName = async function(nome, browserId) {
+            try {
+                const snap = await getDocs(collection(db, 'assinaturas'));
+                // Nomes já usados por OUTROS utilizadores (ignorar o próprio)
+                const others = snap.docs
+                    .filter(d => d.id !== browserId)
+                    .map(d => (d.data().nome || '').toLowerCase());
+                // Se o nome base não existe noutro doc, usa directamente
+                if (!others.includes(nome.toLowerCase())) return nome;
+                // Contar quantos têm o mesmo nome base (case-insensitive)
+                // inclui "Caravela", "Caravela2", "Caravela3", etc.
+                const base = nome.toLowerCase();
+                const count = others.filter(n =>
+                    n === base || /^\d+$/.test(n.slice(base.length)) && n.startsWith(base)
+                ).length;
+                return nome + (count + 1);
+            } catch(err) {
+                console.warn('resolveUniqueName error:', err);
+                return nome; // fallback: usa o nome original
+            }
+        };
 
         window._sigSaveToFirebase = async function(nome, browserId) {
             try {
@@ -432,11 +459,58 @@
                 const nameMap = {};
                 sigSnap.docs.forEach(d => { nameMap[d.id] = d.data().nome || d.id; });
                 return scoresSnap.docs.map(d => ({
-                    name:  nameMap[d.id] || '???',
-                    score: d.data().score || 0
+                    name:      nameMap[d.id] || '???',
+                    score:     d.data().score || 0,
+                    browserId: d.id,
                 }));
             } catch(err) {
                 console.warn('Suika leaderboard error:', err);
+                return [];
+            }
+        };
+
+        // ── Fruit Ninja score functions ──────────────────────────────
+        window._fnGetScore = async function(browserId) {
+            try {
+                const snap = await getDoc(doc(db, 'fn_scores', browserId));
+                if (snap.exists()) return snap.data().score || 0;
+                return null;
+            } catch(err) {
+                console.warn('FN getScore error:', err);
+                return null;
+            }
+        };
+
+        window._fnSetScore = async function(browserId, score) {
+            try {
+                const date = new Date().toLocaleDateString('pt-PT');
+                await setDoc(doc(db, 'fn_scores', browserId), {
+                    score,
+                    browserId,
+                    date,
+                    updatedAt: serverTimestamp()
+                });
+            } catch(err) {
+                console.warn('FN setScore error:', err);
+            }
+        };
+
+        window._fnGetLeaderboard = async function() {
+            try {
+                const [scoresSnap, sigSnap] = await Promise.all([
+                    getDocs(query(collection(db, 'fn_scores'), orderBy('score', 'desc'))),
+                    getDocs(collection(db, 'assinaturas'))
+                ]);
+                const nameMap = {};
+                sigSnap.docs.forEach(d => { nameMap[d.id] = d.data().nome || d.id; });
+                return scoresSnap.docs.map(d => ({
+                    name:      nameMap[d.id] || '???',
+                    score:     d.data().score || 0,
+                    browserId: d.id,
+                    date:      d.data().date  || '',
+                }));
+            } catch(err) {
+                console.warn('FN leaderboard error:', err);
                 return [];
             }
         };
@@ -445,7 +519,23 @@
         document.dispatchEvent(new Event('sig-firebase-ready'));
     </script>
 
+    <!-- GAME LAUNCHER — ecrã completo para novos jogos -->
+    <script src="game-launcher.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var btn = document.getElementById('modBtnCfgPanel');
+            if (btn) {
+                btn.addEventListener('click', function () {
+                    if (typeof window._cfgTogglePanel === 'function') window._cfgTogglePanel();
+                    var modTab = document.getElementById('modTab');
+                    if (modTab) modTab.classList.remove('open');
+                });
+            }
+        });
+    </script>
+
     <!-- SUIKA GAME -->
+    <script src="games-zone.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <script src="suika.js"></script>
 
@@ -528,5 +618,6 @@
     });
 })();
 </script>
+
 </body>
 </html>
