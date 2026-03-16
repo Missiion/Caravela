@@ -111,7 +111,7 @@
             // ── Fruit Ninja ──
             fnPlay:              'PLAY',
             fnLeaderboard:       'LEADERBOARDS',
-            fnBack:              '\u2190 BACK',
+            fnBack:              'BACK',
             fnMenu:              'MENU',
             fnPause:             'PAUSE',
             fnResume:            '▶ RESUME',
@@ -235,7 +235,7 @@
             // ── Fruit Ninja ──
             fnPlay:              'JOGAR',
             fnLeaderboard:       'LEADERBOARDS',
-            fnBack:              '\u2190 VOLTAR',
+            fnBack:              'VOLTAR',
             fnMenu:              'MENU',
             fnPause:             'PAUSA',
             fnResume:            '▶ CONTINUAR',
