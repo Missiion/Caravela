@@ -471,7 +471,7 @@
         if (window._fnSyncLang) window._fnSyncLang(t);
 
         const glBackBtn = document.getElementById('glBackBtn');
-        if (glBackBtn) glBackBtn.textContent = t.fnBack;
+        if (glBackBtn) glBackBtn.textContent = '\u2190 ' + t.fnBack;
 
         const gzBackBtn = document.getElementById('gzBackBtn');
         if (gzBackBtn) gzBackBtn.textContent = t.gzBack;
