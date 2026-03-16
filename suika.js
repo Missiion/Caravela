@@ -237,22 +237,28 @@
         suikaSection.classList.add('morse-exit');
         setTimeout(() => {
             suikaSection.classList.remove('panel-visible', 'morse-exit');
-            const ls = getLinksSection();
-            ls.classList.remove('morse-exit', 'panel-fadein');
-            ls.querySelectorAll('.link-btn, .visita-mais-header').forEach(el => {
-                el.style.animation = 'none'; el.style.opacity = '1';
-            });
-            ls.classList.add('panel-swap');
-            ls.style.display = 'grid';
             suikaSection.style.display = 'none';
-            requestAnimationFrame(() => requestAnimationFrame(() => {
-                ls.classList.remove('panel-swap');
-                ls.classList.add('panel-fadein');
+
+            // Se a Games Zone existir, voltar para ela em vez do hub
+            if (window._gamesZoneOpen && window._gamesZoneOpenPanel) {
+                window._gamesZoneOpenPanel();
+            } else {
+                const ls = getLinksSection();
+                ls.classList.remove('morse-exit', 'panel-fadein');
                 ls.querySelectorAll('.link-btn, .visita-mais-header').forEach(el => {
-                    el.style.animation = '';
+                    el.style.animation = 'none'; el.style.opacity = '1';
                 });
-                setTimeout(() => ls.classList.remove('panel-fadein'), 300);
-            }));
+                ls.classList.add('panel-swap');
+                ls.style.display = 'grid';
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    ls.classList.remove('panel-swap');
+                    ls.classList.add('panel-fadein');
+                    ls.querySelectorAll('.link-btn, .visita-mais-header').forEach(el => {
+                        el.style.animation = '';
+                    });
+                    setTimeout(() => ls.classList.remove('panel-fadein'), 300);
+                }));
+            }
         }, 620);
     }
 
@@ -784,26 +790,27 @@
         if (backBtn) { backBtn.textContent = t.suikaBack; backBtn.title = t.suikaBackTitle; }
     };
 
-    function init() {
-        // Tenta ligar logo agora; se ainda não existir, aguarda até ser revelado
-        function bindLogo() {
-            const logo = document.getElementById('suikaLogoBtn');
-            if (!logo) return false;
-            logo.addEventListener('click', (e) => {
-                e.stopPropagation();
-                buildPanel();
-                openGame();
-            });
-            return true;
+    // Exposto globalmente — a Games Zone chama isto ao clicar no card Suika
+    window._suikaOpenGame = function () {
+        if (suikaSection && suikaSection.style.display === 'flex') return;
+        playSfx('start');
+        const wrap = document.querySelector('.suika-banner-wrap');
+        if (wrap) wrap.classList.add('suika-disabled');
+        buildPanel();
+        // links-section já está escondida pela Games Zone — abrir directamente
+        const ls = getLinksSection();
+        if (ls) ls.style.display = 'none';
+        suikaSection.style.display = 'flex';
+        void suikaSection.offsetWidth;
+        suikaSection.classList.add('panel-visible');
+        if (engine && !gameOver) {
+            loadMatter(resumePhysics);
+        } else {
+            loadMatter(startGame);
         }
+    };
 
-        if (!bindLogo()) {
-            // Observa o DOM até o logo aparecer/ficar visível
-            const obs = new MutationObserver(() => {
-                if (bindLogo()) obs.disconnect();
-            });
-            obs.observe(document.body, { childList: true, subtree: true });
-        }
+    function init() {
         console.log('[Suika] pronto');
     }
 
