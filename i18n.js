@@ -102,9 +102,37 @@
             suikaRestartConfirm: 'SURE?',
             suikaBack:           '\u2190 BACK',
             suikaBackTitle:      'Back',
+            gzBack:              '\u2190 BACK',
             suikaLbLoading:      'Loading...',
             suikaLbEmpty:        'No results found.',
-            suikaBannerPhrases:  ['Try my Suika game', 'Challenge the leaderboards', 'Have fun, and play Suika'],
+            gamesTitle:          'Games!',
+            suikaBannerPhrases:  ['Try my Suika game', 'Challenge the leaderboards', 'Have fun, and play Suika', 'We have Fruit Ninja!', 'Wanna play a game?'],
+
+            // ── Fruit Ninja ──
+            fnPlay:              'PLAY',
+            fnLeaderboard:       'LEADERBOARDS',
+            fnBack:              '\u2190 BACK',
+            fnMenu:              'MENU',
+            fnPause:             'PAUSE',
+            fnResume:            '▶ RESUME',
+            fnRestart:           '↺ RESTART',
+            fnRestartConfirm:    'SURE?',
+            fnPlayAgain:         'PLAY AGAIN',
+            fnHsNotice:          '🏆 NEW RECORD!',
+            fnScoreLabel:        'SCORE',
+            fnFinalScore:        'SCORE',
+            fnBestScore:         'BEST',
+            fnLoading:           'LOADING...',
+            fnNoRecords:         'NO RECORDS YET',
+            fnLeaderTitle:       'LEADERBOARD',
+            fnHints: [
+                'CLICK AND SLASH!',
+                'ARE YOU HUNGRY?',
+                'COMBOS = MORE POINTS',
+                'WATCH OUT FOR BOMBS',
+                'THE FASTER THE BETTER',
+                "DON'T LET ANY FALL!",
+            ],
         },
 
         // ─────────────────────────────────────────────────────
@@ -198,9 +226,37 @@
             suikaRestartConfirm: 'MESMO?',
             suikaBack:           '\u2190 VOLTAR',
             suikaBackTitle:      'Voltar',
+            gzBack:              '\u2190 VOLTAR',
             suikaLbLoading:      'A carregar...',
             suikaLbEmpty:        'Sem resultados.',
-            suikaBannerPhrases:  ['Joga o meu Suika', 'Desafia o ranking', 'Divirte-te no Suika'],
+            gamesTitle:          'Jogos!',
+            suikaBannerPhrases:  ['Joga o meu Suika', 'Desafia o ranking', 'Divirte-te no Suika', 'Nós temos Fruit Ninja!', 'Queres jogar um jogo?'],
+
+            // ── Fruit Ninja ──
+            fnPlay:              'JOGAR',
+            fnLeaderboard:       'LEADERBOARDS',
+            fnBack:              '\u2190 VOLTAR',
+            fnMenu:              'MENU',
+            fnPause:             'PAUSA',
+            fnResume:            '▶ CONTINUAR',
+            fnRestart:           '↺ REINICIAR',
+            fnRestartConfirm:    'MESMO?',
+            fnPlayAgain:         'JOGAR DE NOVO',
+            fnHsNotice:          '🏆 NOVO RECORDE!',
+            fnScoreLabel:        'SCORE',
+            fnFinalScore:        'PONTUAÇÃO',
+            fnBestScore:         'RECORDE',
+            fnLoading:           'A CARREGAR...',
+            fnNoRecords:         'SEM RECORDES AINDA',
+            fnLeaderTitle:       'LEADERBOARD',
+            fnHints: [
+                'CLICA E DESLIZA!',
+                'ESTÁS COM FOME?',
+                'COMBOS = MAIS PONTOS',
+                'CUIDADO COM AS BOMBAS',
+                'QUANTO MAIS RÁPIDO MELHOR',
+                'NÃO DEIXES CAIR NENHUMA!',
+            ],
         }
     };
 
@@ -407,6 +463,18 @@
 
         // ── Suika Game ──
         if (window._suikaSyncLang) window._suikaSyncLang(t);
+
+        const gamesTitleEl = document.querySelector('.suika-banner-title');
+        if (gamesTitleEl) gamesTitleEl.textContent = t.gamesTitle;
+
+        // ── Fruit Ninja ──
+        if (window._fnSyncLang) window._fnSyncLang(t);
+
+        const glBackBtn = document.getElementById('glBackBtn');
+        if (glBackBtn) glBackBtn.textContent = t.fnBack;
+
+        const gzBackBtn = document.getElementById('gzBackBtn');
+        if (gzBackBtn) gzBackBtn.textContent = t.gzBack;
     }
 
     // ══════════════════════════════════════════════════════════
