@@ -100,6 +100,23 @@
         }
     }
 
+    // Resolve o nome único consultando o Firebase (evita duplicados).
+    // Aguarda Firebase ficar pronto e devolve o nome final a usar.
+    async function resolveUniqueName(nome) {
+        if (typeof window._sigResolveUniqueName !== 'function') {
+            // Firebase ainda não pronto — aguarda até 5s
+            await new Promise(resolve => {
+                if (window._sigFirebaseReady) { resolve(); return; }
+                document.addEventListener('sig-firebase-ready', resolve, { once: true });
+                setTimeout(resolve, 5000);
+            });
+        }
+        if (typeof window._sigResolveUniqueName === 'function') {
+            return await window._sigResolveUniqueName(nome, getBrowserId());
+        }
+        return nome; // fallback
+    }
+
     async function loadSignatures() {
         if (typeof window._sigLoadFromFirebase === 'function') {
             try {
@@ -199,7 +216,7 @@
     });
 
     // ── Submit ────────────────────────────────
-    function submitSignature(nome) {
+    async function submitSignature(nome) {
         if (!nome || nome.length < 1 || nome.length > MAX_CHARS) return;
         const now = Date.now();
         if (now - lastSubmit < 30000) return;
@@ -217,9 +234,11 @@
         idleText.classList.add('sig-fadein');
         setTimeout(function () { idleText.classList.remove('sig-fadein'); }, 400);
 
-        sendToFirebase(nome);
-        localStorage.setItem('sig_name', nome);
-        if (!signatures.includes(nome)) signatures.unshift(nome);
+        // Resolver nome único ANTES de guardar (pode adicionar número)
+        const nomeFinal = await resolveUniqueName(nome);
+        sendToFirebase(nomeFinal);
+        localStorage.setItem('sig_name', nomeFinal);
+        if (!signatures.includes(nomeFinal)) signatures.unshift(nomeFinal);
 
         setTimeout(function () {
             eraseText(function () { submitting = false; enterLockedState(true); startHiddenHint(); });
@@ -564,12 +583,14 @@
     });
     editConfirm.addEventListener('click', confirmEdit);
 
-    function confirmEdit() {
+    async function confirmEdit() {
         const newName = editInput.value.trim();
         if (!newName || newName.length < 1 || newName.length > MAX_CHARS) return;
         editPopup.classList.remove('open');
-        sendToFirebase(newName);
-        localStorage.setItem('sig_name', newName);
+        // Resolver nome único ANTES de guardar
+        const nomeFinal = await resolveUniqueName(newName);
+        sendToFirebase(nomeFinal);
+        localStorage.setItem('sig_name', nomeFinal);
         const wb = tr('sigWelcomeBack');
         setLockedText(wb);
         lockedText.classList.add('wave-active');
