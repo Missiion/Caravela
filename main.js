@@ -48,6 +48,12 @@ createBgLayers();
 document.querySelector('.bg-calm').style.display  = 'none';
 document.querySelector('.bg-night').style.display = 'none';
 
+// Restaurar night-mode imediatamente (antes do Promise.all carregar imagens)
+// para que o syncDarkLayers já saiba qual fundo mostrar
+if (localStorage.getItem('night_mode') === '1') {
+    document.body.classList.add('night-mode');
+}
+
 // Night overlay
 const nightOverlay = document.createElement('div');
 nightOverlay.id = 'night-overlay';
@@ -158,10 +164,16 @@ layerSyncObserver.observe(document.body, { attributes: true, attributeFilter: ['
 Promise.all([preloadImage(BG_LIGHT[_lightIdx]), preloadImage(BG_DARK[_darkIdx])]).then(() => {
     applyBgLight(BG_LIGHT[_lightIdx], true);
     applyBgDark(BG_DARK[_darkIdx], true);
-    ['bg-dark-A','bg-dark-B'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) { el.style.zIndex = '-3'; el.style.opacity = '0'; }
-    });
+    // Se night-mode já está ativo (restaurado do localStorage), mostrar fundo escuro
+    // Caso contrário esconder as dark layers como antes
+    if (document.body.classList.contains('night-mode')) {
+        syncDarkLayers();
+    } else {
+        ['bg-dark-A','bg-dark-B'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) { el.style.zIndex = '-3'; el.style.opacity = '0'; }
+        });
+    }
 });
 
 document.getElementById('bgShuffleBtn').addEventListener('click', function() {
@@ -190,7 +202,8 @@ const playlist = [
     { title: "Dance With Somebody", cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Dance%20With%20Somebody%20(CH4YN%20%26%20Chris%20El%20Greco).png", src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Dance%20With%20Somebody%20(CH4YN%20%26%20Chris%20El%20Greco).mp3" },
     { title: "Fine Day",            cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Fine%20day.png",          src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/FINE%20DAY.mp3" },
     { title: "Until I Found You",   cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Until%20I%20Found%20You.png", src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Until%20I%20Found%20You.mp3" },
-    { title: "Wham Bam", cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Wham%20Bam%20Shang-A-Lang.png", src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Wham%20Bam%20Shang-A-Lang.mp3" }
+    { title: "Wham Bam", cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Wham%20Bam%20Shang-A-Lang.png", src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Wham%20Bam%20Shang-A-Lang.mp3" },
+    { title: "Loop",     cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Loop.png",                              src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Loop.mp3" }
 ];
 
 let currentTrackIndex = Math.floor(Math.random() * playlist.length);
@@ -657,15 +670,20 @@ playerStage.addEventListener('wheel', (e) => {
 (function() {
     const card = document.getElementById('parallax-box');
     document.body.addEventListener('mousemove', (e) => {
+        if (document.body.classList.contains('game-open')) return;
         const xAxis = (window.innerWidth  / 2 - e.pageX) / 150;
         const yAxis = (window.innerHeight / 2 - e.pageY) / 150;
         card.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
     });
     document.body.addEventListener('mouseleave', () => {
+        if (document.body.classList.contains('game-open')) return;
         card.style.transition = 'transform 0.5s ease';
         card.style.transform = 'rotateY(0deg) rotateX(0deg)';
     });
-    document.body.addEventListener('mouseenter', () => { card.style.transition = 'none'; });
+    document.body.addEventListener('mouseenter', () => {
+        if (document.body.classList.contains('game-open')) return;
+        card.style.transition = 'none';
+    });
 })();
 
 // =========================================
@@ -789,6 +807,22 @@ playerStage.addEventListener('wheel', (e) => {
         document.getElementById('sndWrapWind').classList.toggle('sound-on',  isWind);
     };
     syncSoundPanel();
+
+    // ── API pública para o game-launcher pausar/retomar chuva ──
+    window._rainCtrl = {
+        pauseDrops: function() {
+            clearInterval(dropInterval);
+            dropInterval = null;
+        },
+        resumeDrops: function() {
+            if (isStorming && !dropInterval) {
+                dropInterval = setInterval(() => {
+                    const count = 2 + Math.floor(Math.random() * 3);
+                    for (let i = 0; i < count; i++) setTimeout(spawnScreenDrop, Math.random() * 300);
+                }, 180);
+            }
+        }
+    };
 })();
 
 // =========================================
@@ -1014,10 +1048,28 @@ playerStage.addEventListener('wheel', (e) => {
     function startNight() { nightCanvas.style.display = 'block'; initStars(); drawFrame(); scheduleCometTimer(); }
     function stopNight()  { nightCanvas.style.display = 'none';  cancelAnimationFrame(animFrame); clearTimeout(cometTimer); comets.length = 0; ctx.clearRect(0, 0, W, H); }
 
+    // API pública — permite ao game-launcher pausar/retomar só os cometas.
+    // As estrelas continuam a animar (drawFrame não é interrompido).
+    window._nightCtrl = {
+        pause: function () {
+            if (!nightActive) return;
+            // Para apenas o agendador de cometas — estrelas continuam a animar
+            clearTimeout(cometTimer); cometTimer = null;
+            // Limpa cometas em voo para não ficarem congelados no ecrã
+            comets.length = 0;
+        },
+        resume: function () {
+            if (!nightActive) return;
+            // Retoma o agendador de cometas (drawFrame já estava a correr)
+            if (!cometTimer) scheduleCometTimer();
+        }
+    };
+
     moonBtn.addEventListener('click', () => {
         nightActive = !nightActive;
         document.body.classList.toggle('night-mode', nightActive);
         moonBtn.classList.toggle('active', nightActive);
+        localStorage.setItem('night_mode', nightActive ? '1' : '0');
 
         const dots = document.querySelectorAll('.theme-dot');
         if (nightActive) {
@@ -1033,6 +1085,22 @@ playerStage.addEventListener('wheel', (e) => {
             stopNight();
         }
     });
+
+    // Restaurar modo noturno se estava ativo na última sessão
+    // night-mode já está no body desde o início — só sincronizar UI e estrelas
+    if (localStorage.getItem('night_mode') === '1') {
+        nightActive = true;
+        moonBtn.classList.add('active');
+        // Guardar o tema anterior (lido do localStorage, antes de forçar mono)
+        // para que ao desligar o night mode o tema correto seja restaurado
+        const savedTheme = localStorage.getItem('hub_theme') || 'default';
+        moonBtn._prevTheme = savedTheme;
+        document.body.classList.remove('theme-default', 'theme-emerald', 'theme-mono');
+        document.body.classList.add('theme-mono');
+        const dots = document.querySelectorAll('.theme-dot');
+        dots.forEach(d => d.classList.toggle('active', d.dataset.theme === 'mono'));
+        startNight();
+    }
 })();
 
 // =========================================
@@ -1042,19 +1110,59 @@ playerStage.addEventListener('wheel', (e) => {
     const dots   = document.querySelectorAll('.theme-dot');
     const themes = ['default', 'emerald', 'mono'];
 
+    // Lê as variáveis CSS do tema actual — definidas em body.theme-X, não em :root
+    function getThemeColors() {
+        const cs = getComputedStyle(document.body);
+        return {
+            borda:  cs.getPropertyValue('--cor-borda-principal').trim() || '#283593',
+            sombra: cs.getPropertyValue('--cor-sombra').trim()          || '#b71c1c',
+        };
+    }
+
+    // Envia o tema actual a todos os iframes da página
+    function broadcastTheme() {
+        const { borda, sombra } = getThemeColors();
+        document.querySelectorAll('iframe').forEach(iframe => {
+            try {
+                iframe.contentWindow.postMessage({ tipo: 'MUDAR_TEMA', borda, sombra }, '*');
+            } catch(e) {}
+        });
+    }
+
     function applyTheme(theme) {
         document.body.classList.remove(...themes.map(t => 'theme-' + t));
         if (theme !== 'default') document.body.classList.add('theme-' + theme);
         dots.forEach(d => d.classList.toggle('active', d.dataset.theme === theme));
         try { localStorage.setItem('hub_theme', theme); } catch(e) {}
+        // Notificar iframes abertos sobre a mudança de tema
+        broadcastTheme();
     }
 
     dots.forEach(dot => { dot.addEventListener('click', () => applyTheme(dot.dataset.theme)); });
 
     try {
         const saved = localStorage.getItem('hub_theme');
-        if (saved && themes.includes(saved)) applyTheme(saved);
+        if (saved && themes.includes(saved)) {
+            if (document.body.classList.contains('night-mode')) {
+                // Night mode está ativo — só atualizar os dots, não mudar a classe do body
+                dots.forEach(d => d.classList.toggle('active', d.dataset.theme === 'mono'));
+            } else {
+                applyTheme(saved);
+            }
+        }
     } catch(e) {}
+
+    // Responder a pedidos de tema vindos de iframes (PEDIR_TEMA)
+    // Isto resolve a race condition: o iframe pede o tema assim que carrega,
+    // em vez de depender do pai enviar no momento certo.
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.tipo === 'PEDIR_TEMA') {
+            const { borda, sombra } = getThemeColors();
+            try {
+                event.source.postMessage({ tipo: 'MUDAR_TEMA', borda, sombra }, '*');
+            } catch(e) {}
+        }
+    });
 })();
 
 // =========================================
