@@ -41,6 +41,16 @@ body.theme-mono {
     --cor-botao-hover: #2e2e2e;
 }
 
+/* Tema mono: "Playing" e barras EQ em branco (--cor-sombra é preto neste tema) */
+body.theme-mono .vhs-status-text.playing {
+    color: #ffffff;
+    text-shadow: 0 0 12px rgba(255,255,255,0.4);
+}
+body.theme-mono .vhs-eq-bar {
+    background: #ffffff;
+    box-shadow: 0 0 4px rgba(255,255,255,0.4);
+}
+
 /* ── NIGHT MODE ── */
 .bg-calm  { opacity: 1; }
 .bg-storm { opacity: 0; }
@@ -1562,7 +1572,8 @@ body.hidden-mode .spring-hint,
 body.hidden-mode .autumn-hint,
 body.hidden-mode .summer-hint,
 body.hidden-mode .mod-tab,
-body.hidden-mode #night-canvas {
+body.hidden-mode #night-canvas,
+body.hidden-mode #langToggleBtn {
     opacity: 0 !important;
     pointer-events: none;
 }
@@ -1817,8 +1828,27 @@ body.hidden-mode #night-canvas {
     transition: opacity 0.25s ease;
 }
 .signatures-section.panel-visible { opacity: 1; }
+.signatures-section.panel-visible .sig-header-row,
+.signatures-section.panel-visible .sig-controls,
+.signatures-section.panel-visible .sig-display-area {
+    animation: morseNeonIn 0.22s steps(1) forwards;
+}
+.signatures-section.panel-visible .sig-header-row    { animation-delay: 0.00s; }
+.signatures-section.panel-visible .sig-controls      { animation-delay: 0.06s; }
+.signatures-section.panel-visible .sig-display-area  { animation-delay: 0.14s; }
 .links-section.panel-swap { opacity: 0; transition: none; }
-.links-section.panel-fadein { opacity: 1; transition: opacity 0.25s ease; }
+.links-section.panel-fadein { opacity: 1; transition: none; }
+.links-section.panel-fadein .link-btn,
+.links-section.panel-fadein .visita-mais-header {
+    animation: morseNeonIn 0.22s steps(1) forwards;
+}
+.links-section.panel-fadein .link-btn:nth-child(3) { animation-delay: 0.00s; }
+.links-section.panel-fadein .link-btn:nth-child(4) { animation-delay: 0.03s; }
+.links-section.panel-fadein .link-btn:nth-child(5) { animation-delay: 0.06s; }
+.links-section.panel-fadein .link-btn:nth-child(6) { animation-delay: 0.09s; }
+.links-section.panel-fadein .link-btn:nth-child(7) { animation-delay: 0.12s; }
+.links-section.panel-fadein .link-btn:nth-child(8) { animation-delay: 0.15s; }
+.links-section.panel-fadein .visita-mais-header    { animation-delay: 0.18s; }
 
 /* Morse/neon-off exit for signatures panel closing */
 .signatures-section.morse-exit .sig-display-area,
@@ -2107,6 +2137,16 @@ body.theme-mono {
     --cor-borda-principal: #6b6b6b;
     --cor-sombra: #111111;
     --cor-botao-hover: #2e2e2e;
+}
+
+/* Tema mono: "Playing" e barras EQ em branco (--cor-sombra é preto neste tema) */
+body.theme-mono .vhs-status-text.playing {
+    color: #ffffff;
+    text-shadow: 0 0 12px rgba(255,255,255,0.4);
+}
+body.theme-mono .vhs-eq-bar {
+    background: #ffffff;
+    box-shadow: 0 0 4px rgba(255,255,255,0.4);
 }
 
 /* ── NIGHT MODE ── */
@@ -3440,7 +3480,8 @@ body.hidden-mode .spring-hint,
 body.hidden-mode .autumn-hint,
 body.hidden-mode .summer-hint,
 body.hidden-mode .mod-tab,
-body.hidden-mode #night-canvas {
+body.hidden-mode #night-canvas,
+body.hidden-mode #langToggleBtn {
     opacity: 0 !important;
     pointer-events: none;
 }
@@ -3695,8 +3736,27 @@ body.hidden-mode #night-canvas {
     transition: opacity 0.25s ease;
 }
 .signatures-section.panel-visible { opacity: 1; }
+.signatures-section.panel-visible .sig-header-row,
+.signatures-section.panel-visible .sig-controls,
+.signatures-section.panel-visible .sig-display-area {
+    animation: morseNeonIn 0.22s steps(1) forwards;
+}
+.signatures-section.panel-visible .sig-header-row    { animation-delay: 0.00s; }
+.signatures-section.panel-visible .sig-controls      { animation-delay: 0.06s; }
+.signatures-section.panel-visible .sig-display-area  { animation-delay: 0.14s; }
 .links-section.panel-swap { opacity: 0; transition: none; }
-.links-section.panel-fadein { opacity: 1; transition: opacity 0.25s ease; }
+.links-section.panel-fadein { opacity: 1; transition: none; }
+.links-section.panel-fadein .link-btn,
+.links-section.panel-fadein .visita-mais-header {
+    animation: morseNeonIn 0.22s steps(1) forwards;
+}
+.links-section.panel-fadein .link-btn:nth-child(3) { animation-delay: 0.00s; }
+.links-section.panel-fadein .link-btn:nth-child(4) { animation-delay: 0.03s; }
+.links-section.panel-fadein .link-btn:nth-child(5) { animation-delay: 0.06s; }
+.links-section.panel-fadein .link-btn:nth-child(6) { animation-delay: 0.09s; }
+.links-section.panel-fadein .link-btn:nth-child(7) { animation-delay: 0.12s; }
+.links-section.panel-fadein .link-btn:nth-child(8) { animation-delay: 0.15s; }
+.links-section.panel-fadein .visita-mais-header    { animation-delay: 0.18s; }
 
 /* Morse/neon-off exit for signatures panel closing */
 .signatures-section.morse-exit .sig-display-area,
@@ -3985,6 +4045,16 @@ body.theme-mono {
     --cor-borda-principal: #6b6b6b;
     --cor-sombra: #111111;
     --cor-botao-hover: #2e2e2e;
+}
+
+/* Tema mono: "Playing" e barras EQ em branco (--cor-sombra é preto neste tema) */
+body.theme-mono .vhs-status-text.playing {
+    color: #ffffff;
+    text-shadow: 0 0 12px rgba(255,255,255,0.4);
+}
+body.theme-mono .vhs-eq-bar {
+    background: #ffffff;
+    box-shadow: 0 0 4px rgba(255,255,255,0.4);
 }
 
 /* ── NIGHT MODE ── */
@@ -5318,7 +5388,8 @@ body.hidden-mode .spring-hint,
 body.hidden-mode .autumn-hint,
 body.hidden-mode .summer-hint,
 body.hidden-mode .mod-tab,
-body.hidden-mode #night-canvas {
+body.hidden-mode #night-canvas,
+body.hidden-mode #langToggleBtn {
     opacity: 0 !important;
     pointer-events: none;
 }
@@ -5573,8 +5644,27 @@ body.hidden-mode #night-canvas {
     transition: opacity 0.25s ease;
 }
 .signatures-section.panel-visible { opacity: 1; }
+.signatures-section.panel-visible .sig-header-row,
+.signatures-section.panel-visible .sig-controls,
+.signatures-section.panel-visible .sig-display-area {
+    animation: morseNeonIn 0.22s steps(1) forwards;
+}
+.signatures-section.panel-visible .sig-header-row    { animation-delay: 0.00s; }
+.signatures-section.panel-visible .sig-controls      { animation-delay: 0.06s; }
+.signatures-section.panel-visible .sig-display-area  { animation-delay: 0.14s; }
 .links-section.panel-swap { opacity: 0; transition: none; }
-.links-section.panel-fadein { opacity: 1; transition: opacity 0.25s ease; }
+.links-section.panel-fadein { opacity: 1; transition: none; }
+.links-section.panel-fadein .link-btn,
+.links-section.panel-fadein .visita-mais-header {
+    animation: morseNeonIn 0.22s steps(1) forwards;
+}
+.links-section.panel-fadein .link-btn:nth-child(3) { animation-delay: 0.00s; }
+.links-section.panel-fadein .link-btn:nth-child(4) { animation-delay: 0.03s; }
+.links-section.panel-fadein .link-btn:nth-child(5) { animation-delay: 0.06s; }
+.links-section.panel-fadein .link-btn:nth-child(6) { animation-delay: 0.09s; }
+.links-section.panel-fadein .link-btn:nth-child(7) { animation-delay: 0.12s; }
+.links-section.panel-fadein .link-btn:nth-child(8) { animation-delay: 0.15s; }
+.links-section.panel-fadein .visita-mais-header    { animation-delay: 0.18s; }
 
 /* Morse/neon-off exit for signatures panel closing */
 .signatures-section.morse-exit .sig-display-area,
@@ -5881,6 +5971,22 @@ body.hidden-mode #night-canvas {
     align-self: stretch;
 }
 .suika-section.panel-visible { opacity: 1; }
+
+/* Entry: each child animates in with staggered morse — mirrors the exit */
+.suika-section.panel-visible .suika-header-row,
+.suika-section.panel-visible .suika-body {
+    animation: morseNeonIn 0.22s steps(1) forwards;
+}
+.suika-section.panel-visible .suika-header-row { animation-delay: 0.00s; }
+.suika-section.panel-visible .suika-body       { animation-delay: 0.14s; }
+
+@keyframes morseNeonIn {
+    0%   { opacity: 0; }
+    25%  { opacity: 1; }
+    45%  { opacity: 0; }
+    75%  { opacity: 1; }
+    100% { opacity: 1; }
+}
 
 .suika-section.morse-exit .suika-body,
 .suika-section.morse-exit .suika-header-row {
