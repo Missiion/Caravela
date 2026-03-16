@@ -50,7 +50,9 @@
         overlay      = el('div',    'gameLaunchOverlay');
         const topBar = el('div',    'glTopBar');
         backBtn      = el('button', 'glBackBtn');
-        backBtn.textContent = (window._i18n && window._i18n.get('fnBack')) || '← BACK';
+        const _fnBackVal = window._i18n && window._i18n.get('fnBack');
+        const _fnBackLabel = (_fnBackVal && _fnBackVal !== 'fnBack') ? _fnBackVal : 'BACK';
+        backBtn.textContent = '\u2190 ' + _fnBackLabel;
         gameTitle    = el('span',   'glGameTitle');
         soundDock    = el('div',    'glSoundDock');
 
@@ -456,18 +458,23 @@
     }
 
     /* ── Envia o idioma actual ao iframe (se estiver aberto) ── */
+    const _fnFallbacks = {
+        fnPlay: 'PLAY', fnLeaderboard: 'LEADERBOARDS', fnBack: 'BACK',
+        fnMenu: 'MENU', fnPause: 'PAUSE', fnResume: 'RESUME',
+        fnRestart: '↺ RESTART', fnRestartConfirm: 'SURE?', fnPlayAgain: 'PLAY AGAIN',
+        fnHsNotice: '⭐ High score updated!', fnScoreLabel: 'SCORE',
+        fnFinalScore: 'SCORE', fnBestScore: 'BEST', fnLoading: 'LOADING...',
+        fnNoRecords: 'No records yet', fnLeaderTitle: 'LEADERBOARD', fnHints: 'WATCH OUT FOR BOMBS'
+    };
     function sendLangToFrame() {
         if (!frame || !frame.contentWindow) return;
         if (!frame.src || frame.src === 'about:blank') return;
-        if (!window._i18n) return;
-        const keys = [
-            'fnPlay','fnLeaderboard','fnBack','fnMenu','fnPause','fnResume',
-            'fnRestart','fnRestartConfirm','fnPlayAgain','fnHsNotice',
-            'fnScoreLabel','fnFinalScore','fnBestScore','fnLoading','fnNoRecords',
-            'fnLeaderTitle','fnHints'
-        ];
         const t = {};
-        keys.forEach(function(k) { t[k] = window._i18n.get(k); });
+        Object.keys(_fnFallbacks).forEach(function(k) {
+            const val = window._i18n && window._i18n.get(k);
+            // só usa o valor do i18n se for diferente da chave (ou seja, foi mesmo traduzido)
+            t[k] = (val && val !== k) ? val : _fnFallbacks[k];
+        });
         try { frame.contentWindow.postMessage({ tipo: 'FN_SET_LANG', t }, '*'); } catch(err) {}
     }
 
