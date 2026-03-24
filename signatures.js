@@ -24,6 +24,13 @@
     const hidePopup       = document.getElementById('sigHidePopup');
     const hideCancel      = document.getElementById('sigHideCancel');
     const hideConfirm     = document.getElementById('sigHideConfirm');
+    const seasonPopup     = document.getElementById('sigSeasonPopup');
+    const seasonPopupOk   = document.getElementById('sigSeasonPopupOk');
+    const seasonPopupSub  = document.getElementById('sigSeasonPopupSub');
+    const seasonPopupTitle= document.getElementById('sigSeasonPopupTitle');
+
+    // Season codes that are blocked from being used as signatures
+    const SEASON_CODES = ['spring', 'snow', 'autumn', 'summer'];
     const menuEdit        = document.getElementById('sigMenuEdit');
     const menuHideRefresh = document.getElementById('sigMenuHideRefresh');
     const menuHideForever = document.getElementById('sigMenuHideForever');
@@ -38,14 +45,20 @@
     const menuShowAll       = document.getElementById('sigMenuShowAll');
 
     // ── i18n helper ───────────────────────────
+    const _sigFallback = {
+        sigIdlePhrases: ['Write your name...', 'Sign this website...'],
+        sigThankYou:    'Thank you!',
+        sigWelcomeBack: 'Welcome back',
+        sigSeasonTitle: 'That\'s a season code!',
+        sigSeasonSub:   'Season effects go on the page, not here. Write your actual name. If this is your name, use a variation and edit it later.'
+    };
     function tr(key) {
-        if (window._i18n && typeof window._i18n.get === 'function') return window._i18n.get(key);
-        const fallback = {
-            sigIdlePhrases: ['Write your name...', 'Sign this website...'],
-            sigThankYou:    'Thank you!',
-            sigWelcomeBack: 'Welcome back'
-        };
-        return fallback[key] !== undefined ? fallback[key] : key;
+        if (window._i18n && typeof window._i18n.get === 'function') {
+            const val = window._i18n.get(key);
+            // If i18n returns the key itself, the key is not registered — use local fallback
+            if (val !== key) return val;
+        }
+        return _sigFallback[key] !== undefined ? _sigFallback[key] : key;
     }
 
     // ── State ─────────────────────────────────
@@ -218,10 +231,14 @@
     // ── Submit ────────────────────────────────
     async function submitSignature(nome) {
         if (!nome || nome.length < 1 || nome.length > MAX_CHARS) return;
+        if (sigTrap.value !== '') return;
+
+        // Block season codes — check BEFORE rate limit so it always triggers
+        if (isSeasonCode(nome)) { submitting = true; showSeasonWarning(); return; }
+
         const now = Date.now();
         if (now - lastSubmit < 30000) return;
         lastSubmit = now;
-        if (sigTrap.value !== '') return;
 
         submitting = true;
         stopIdle(); isActive = false;
@@ -586,6 +603,10 @@
     async function confirmEdit() {
         const newName = editInput.value.trim();
         if (!newName || newName.length < 1 || newName.length > MAX_CHARS) return;
+
+        // Block season codes
+        if (isSeasonCode(newName)) { editPopup.classList.remove('open'); showSeasonWarning(); return; }
+
         editPopup.classList.remove('open');
         // Resolver nome único ANTES de guardar
         const nomeFinal = await resolveUniqueName(newName);
@@ -595,6 +616,35 @@
         setLockedText(wb);
         lockedText.classList.add('wave-active');
         setMode('locked');
+    }
+
+    // ── Season code guard ─────────────────────
+    function isSeasonCode(name) {
+        return SEASON_CODES.includes(name.trim().toLowerCase());
+    }
+
+    function showSeasonWarning() {
+        // Sync translated text if i18n is available
+        if (seasonPopupTitle) seasonPopupTitle.textContent = tr('sigSeasonTitle');
+        if (seasonPopupSub)   seasonPopupSub.textContent   = tr('sigSeasonSub');
+        // Revert input to idle state before showing popup
+        isActive = false; submitting = false;
+        sigInput.classList.remove('active');
+        sigInput.value = '';
+        startIdle();
+        seasonPopup.classList.add('open');
+    }
+
+    if (seasonPopupOk) {
+        seasonPopupOk.addEventListener('click', function () {
+            seasonPopup.classList.remove('open');
+            submitting = false;
+        });
+    }
+    if (seasonPopup) {
+        seasonPopup.addEventListener('click', function (e) {
+            if (e.target === seasonPopup) seasonPopup.classList.remove('open');
+        });
     }
 
     const modResetBtn = document.getElementById('modBtnResetSig');
