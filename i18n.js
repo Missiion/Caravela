@@ -61,6 +61,9 @@
             sigBackBtn:         '\u2190 BACK',
             sigBackBtnTitle:    'Back',
 
+            sigSeasonTitle:     'That\'s a season code!',
+            sigSeasonSub:       'Season effects go on the page, not here. Write your actual name. If this is your name, use a variation and edit it later.',
+
             physicsHint:      'Drag and throw! \uD83C\uDF89',
             profileClickHint: '\uD83D\uDDB1 CLICK',
 
@@ -184,6 +187,9 @@
             sigSectionTitle:    'ASSINATURAS',
             sigBackBtn:         '\u2190 VOLTAR',
             sigBackBtnTitle:    'Voltar',
+
+            sigSeasonTitle:     'Isso \u00e9 um c\u00f3digo de esta\u00e7\u00e3o!',
+            sigSeasonSub:       'Os efeitos de esta\u00e7\u00e3o activam-se na p\u00e1gina, n\u00e3o aqui. Escreve o teu nome. Se este for mesmo o teu nome, usa uma varia\u00e7\u00e3o e edita depois.',
 
             physicsHint:      'Arrasta e atira! \uD83C\uDF89',
             profileClickHint: '\uD83D\uDDB1 CLICAR',
@@ -460,6 +466,12 @@
         if (resetBtn && !resetBtn.dataset.i18nFeedback) resetBtn.textContent = t.modBtnResetSig;
 
         if (window._sigSyncLang) window._sigSyncLang(t.sigIdlePhrases, t.sigThankYou, t.sigWelcomeBack);
+
+        // ── Season popup ──
+        const seasonTitle = document.getElementById('sigSeasonPopupTitle');
+        const seasonSub   = document.getElementById('sigSeasonPopupSub');
+        if (seasonTitle) seasonTitle.textContent = t.sigSeasonTitle;
+        if (seasonSub)   seasonSub.textContent   = t.sigSeasonSub;
 
         // ── Suika Game ──
         if (window._suikaSyncLang) window._suikaSyncLang(t);
