@@ -21,9 +21,6 @@
     const editCancel      = document.getElementById('sigEditCancel');
     const editConfirm     = document.getElementById('sigEditConfirm');
     const sigZone         = document.getElementById('signatureZone');
-    const hidePopup       = document.getElementById('sigHidePopup');
-    const hideCancel      = document.getElementById('sigHideCancel');
-    const hideConfirm     = document.getElementById('sigHideConfirm');
     const seasonPopup     = document.getElementById('sigSeasonPopup');
     const seasonPopupOk   = document.getElementById('sigSeasonPopupOk');
     const seasonPopupSub  = document.getElementById('sigSeasonPopupSub');
@@ -33,7 +30,6 @@
     const SEASON_CODES = ['spring', 'snow', 'autumn', 'summer'];
     const menuEdit        = document.getElementById('sigMenuEdit');
     const menuHideRefresh = document.getElementById('sigMenuHideRefresh');
-    const menuHideForever = document.getElementById('sigMenuHideForever');
     const menuItems       = sigMenu.querySelectorAll('.sig-menu-item');
 
     const linksSection      = document.querySelector('.links-section');
@@ -142,9 +138,8 @@
     }
 
     function checkSigned() {
-        if (localStorage.getItem('sig_hidden_forever') === '1') { hideSigZone(); return; }
         const saved = localStorage.getItem('sig_name');
-        if (saved) { enterLockedState(false); startHiddenHint(); } else { startIdle(); }
+        if (saved) { enterLockedState(false); } else { startIdle(); }
     }
 
     function hideSigZone() { if (sigZone) sigZone.style.display = 'none'; }
@@ -258,7 +253,7 @@
         if (!signatures.includes(nomeFinal)) signatures.unshift(nomeFinal);
 
         setTimeout(function () {
-            eraseText(function () { submitting = false; enterLockedState(true); startHiddenHint(); });
+            eraseText(function () { submitting = false; enterLockedState(true); });
         }, 3000);
     }
 
@@ -274,100 +269,6 @@
 
     // ── Locked state ──────────────────────────
 
-    // ── Dica escondida: peek + glow + interrogação ────────────────────────
-    let _hintActive = false;
-    let _hintCleanup = [];
-
-    function startHiddenHint() {
-        if (_hintActive) return;
-        const profileSection = document.querySelector('.profile-section');
-        if (!profileSection) return;
-        _hintActive = true;
-
-        const BASE = 'https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/';
-        const IMGS = [
-            BASE+'Suika_1ponto.png', BASE+'Suika_3pontos.png', BASE+'suika_6pontos.png',
-            BASE+'Suika_10pontos.png', BASE+'suika_15pontos.png', BASE+'Suika_21pontos.png',
-            BASE+'Suika_28pontos.png', BASE+'Suika_36pontos.png',
-        ];
-
-        // ── Pontos de interrogação ──
-        const qEl = document.createElement('div');
-        // Posição inicial aleatória, muda a cada ciclo via JS
-        qEl.style.cssText = `
-            position: absolute; bottom: 6px;
-            left: 10px;
-            font-family: 'Nunito', sans-serif; font-weight: 900;
-            font-size: 0.7rem; letter-spacing: 12px;
-            color: rgba(120,160,255,0.32);
-            pointer-events: none; z-index: 999;
-            opacity: 0;
-            transition: opacity 0.5s ease;
-            white-space: nowrap;
-        `;
-        qEl.className = 'suika-hint-q';
-        qEl.textContent = '? ? ?';
-        profileSection.appendChild(qEl);
-
-        // Ciclo manual para poder mudar posição a cada aparição
-        let qVisible = false;
-        let qTimer = null;
-        function qCycle() {
-            if (!_hintActive) return;
-            qVisible = !qVisible;
-
-            qEl.style.opacity = qVisible ? '1' : '0';
-            qTimer = setTimeout(qCycle, qVisible
-                ? 1800 + Math.random() * 1200  // visível 1.8–3s
-                : 1200 + Math.random() * 1500  // escondido 1.2–2.7s
-            );
-        }
-        qTimer = setTimeout(qCycle, 600 + Math.random() * 800);
-        _hintCleanup.push(() => { clearTimeout(qTimer); qEl.remove(); });
-
-        // Para apenas quando o banner fica realmente aberto (após dwell de 600ms na zona)
-        const bannerWrap = document.querySelector('.suika-banner-wrap');
-        if (bannerWrap) {
-            let dwellTimer = null;
-            const observer = new MutationObserver(() => {
-                if (bannerWrap.classList.contains('open')) {
-                    // Só para após o banner estar visível por 600ms contínuos
-                    if (dwellTimer) return;
-                    dwellTimer = setTimeout(() => {
-                        stopHiddenHint();
-                        observer.disconnect();
-                    }, 55);
-                } else {
-                    // Banner fechou antes do dwell — cancela
-                    clearTimeout(dwellTimer);
-                    dwellTimer = null;
-                }
-            });
-            observer.observe(bannerWrap, { attributes: true, attributeFilter: ['class'] });
-            _hintCleanup.push(() => {
-                clearTimeout(dwellTimer);
-                observer.disconnect();
-            });
-        }
-    }
-
-    function stopHiddenHint() {
-        _hintActive = false;
-        // Fade out Q marks before removing
-        const qEl = document.querySelector('.suika-hint-q');
-        if (qEl) {
-            qEl.style.transition = 'opacity 0.4s ease';
-            qEl.style.opacity = '0';
-            setTimeout(() => {
-                _hintCleanup.forEach(fn => fn());
-                _hintCleanup = [];
-            }, 420);
-        } else {
-            _hintCleanup.forEach(fn => fn());
-            _hintCleanup = [];
-        }
-    }
-
     function enterLockedState(animate) {
         isLocked = true; isActive = false;
         stopIdle(); sigInput.classList.remove('active');
@@ -379,6 +280,9 @@
             // Tornar o wrapper hover-ável também
             if (suikaBanner.parentElement && suikaBanner.parentElement.classList.contains('suika-banner-wrap')) {
                 suikaBanner.parentElement.classList.add('visible');
+            }
+            if (typeof window._applySuikaBannerCollapse === 'function') {
+                window._applySuikaBannerCollapse();
             }
             if (animate) {
                 setTimeout(() => {
@@ -576,15 +480,6 @@
 
     menuEdit.addEventListener('click', function (e) { e.stopPropagation(); openEditPopup(); });
     menuHideRefresh.addEventListener('click', function (e) { e.stopPropagation(); hideSigZone(); });
-    menuHideForever.addEventListener('click', function (e) { e.stopPropagation(); hidePopup.classList.add('open'); });
-
-    hideCancel.addEventListener('click', function () { hidePopup.classList.remove('open'); });
-    hidePopup.addEventListener('click', function (e) { if (e.target === hidePopup) hidePopup.classList.remove('open'); });
-    hideConfirm.addEventListener('click', function () {
-        localStorage.setItem('sig_hidden_forever', '1');
-        hidePopup.classList.remove('open');
-        hideSigZone();
-    });
 
     function openEditPopup() {
         editInput.value = '';
@@ -652,7 +547,6 @@
         modResetBtn.addEventListener('click', function () {
             localStorage.removeItem('sig_name');
             localStorage.removeItem('sig_browser_id');
-            localStorage.removeItem('sig_hidden_forever');
             isLocked = false; isActive = false; lastSubmit = 0; submitting = false;
             if (sigZone) sigZone.style.display = '';
             startIdle();
