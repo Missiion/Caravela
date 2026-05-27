@@ -4,6 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Master HUB</title>
+    <script>
+        (function() {
+            var scale = window.screen.width / 1920;
+            if (scale === 1) return;
+            var isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+            var styleEl = document.createElement('style');
+            if (isFirefox) {
+                // Firefox: transform: scale no body, compensar dimensões
+                var inv = (1 / scale) * 100;
+                styleEl.textContent =
+                    'body { transform: scale(' + scale + '); transform-origin: top left;' +
+                    ' width: ' + inv + 'vw !important; height: ' + inv + 'vh !important; }';
+            } else {
+                // Chromium/Safari: zoom no body, dimensões compensadas para cobrir o ecrã físico
+                var inv = (1 / scale) * 100;
+                styleEl.textContent =
+                    'body { zoom: ' + scale + ';' +
+                    ' width: ' + inv + 'vw !important; min-height: ' + inv + 'vh !important; }';
+            }
+            document.head.appendChild(styleEl);
+        })();
+    </script>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="suika.css">
     <link rel="stylesheet" href="game-launcher.css">
@@ -92,7 +114,7 @@
                 Spotify
             </a>
             <a href="https://letterboxd.com/Tafixe/" class="link-btn" target="_blank">
-                <img src="https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Logo_backloggd.png" alt="Letterboxd" class="icon">
+                <img src="https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Logo_letterboxd.png" alt="Letterboxd" class="icon">
                 Letterboxd
             </a>
             <a href="https://anilist.co/user/Caravela/" class="link-btn" target="_blank">
@@ -122,7 +144,7 @@
                             <div class="sig-menu-item"        id="sigMenuShowAll">Show all signatures</div>
                             <div class="sig-menu-item"        id="sigMenuEdit">Edit my signature</div>
                             <div class="sig-menu-item"        id="sigMenuHideRefresh">Hide until refresh</div>
-                            <div class="sig-menu-item danger" id="sigMenuHideForever">Hide forever</div>
+                            <div class="sig-menu-item"        id="sigMenuToggleGames">Collapse Games</div>
                         </div>
                     </span>
                 </div>
@@ -136,18 +158,6 @@
                     <div class="sig-edit-actions">
                         <button class="sig-edit-btn"         id="sigEditCancel">Cancel</button>
                         <button class="sig-edit-btn confirm" id="sigEditConfirm">Save</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Hide forever popup -->
-            <div class="sig-hide-popup" id="sigHidePopup">
-                <div class="sig-hide-box">
-                    <div class="sig-hide-title">Are you sure?</div>
-                    <div class="sig-hide-sub">This can't be undone</div>
-                    <div class="sig-hide-actions">
-                        <button class="sig-hide-btn"         id="sigHideCancel">Cancel</button>
-                        <button class="sig-hide-btn confirm" id="sigHideConfirm">Hide forever</button>
                     </div>
                 </div>
             </div>
@@ -603,17 +613,33 @@
             el.textContent = phrases[0];
         });
 
-        // Hover zone: zona invisível acima do wrap onde o rato "sente" o banner
+        // Suika banner: sempre visível após assinatura, ou colapsado se preferência guardada
         const wrap = document.querySelector('.suika-banner-wrap');
         if (!wrap) return;
 
-        // Detectar hover nos últimos 44px do profile-section (zona do banner)
-        const TRIGGER_HEIGHT = 44;
-        const profile = document.querySelector('.profile-section');
+        // Exposta globalmente — o signatures.js chama-a após revelar o banner
+        window._applySuikaBannerCollapse = function() {
+            const collapsed = localStorage.getItem('suika_banner_collapsed') === '1';
+            if (collapsed) {
+                wrap.classList.add('suika-collapsed');
+                wrap.classList.remove('open');
+            } else {
+                wrap.classList.remove('suika-collapsed', 'open');
+            }
+            const toggleBtn = document.getElementById('sigMenuToggleGames');
+            if (toggleBtn) {
+                const t = window._i18n ? window._i18n.get : function(k){return k;};
+                toggleBtn.textContent = collapsed ? t('sigMenuToggleGamesOn') : t('sigMenuToggleGames');
+            }
+        };
 
+        // Lógica de hover APENAS quando o modo colapso está ativo
+        const profile = document.querySelector('.profile-section');
+        const TRIGGER_HEIGHT = 44;
         function checkMouse(e) {
             if (!wrap.classList.contains('visible')) return;
             if (wrap.classList.contains('suika-disabled')) { wrap.classList.remove('open'); return; }
+            if (!wrap.classList.contains('suika-collapsed')) return;
             if (!profile) return;
             const rect = profile.getBoundingClientRect();
             const fromBottom = rect.bottom - e.clientY;
@@ -624,8 +650,14 @@
                 wrap.classList.remove('open');
             }
         }
-
         document.addEventListener('mousemove', checkMouse);
+
+        // Handler do botão no sig-menu
+        document.getElementById('sigMenuToggleGames').addEventListener('click', function() {
+            const collapsed = localStorage.getItem('suika_banner_collapsed') === '1';
+            localStorage.setItem('suika_banner_collapsed', collapsed ? '0' : '1');
+            window._applySuikaBannerCollapse();
+        });
     });
 })();
 </script>
