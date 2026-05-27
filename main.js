@@ -203,7 +203,16 @@ const playlist = [
     { title: "Fine Day",            cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Fine%20day.png",          src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/FINE%20DAY.mp3" },
     { title: "Until I Found You",   cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Until%20I%20Found%20You.png", src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Until%20I%20Found%20You.mp3" },
     { title: "Wham Bam", cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Wham%20Bam%20Shang-A-Lang.png", src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Wham%20Bam%20Shang-A-Lang.mp3" },
-    { title: "Loop",     cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Loop.png",                              src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Loop.mp3" }
+    { title: "Loop",     cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Loop.png",                              src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Loop.mp3" },
+    { title: "Like a Stone",           cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Like%20a%20Stone.png",                          src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Like%20a%20Stone.mp3" },
+    { title: "Wie？ (UNDA Techno Remix)", cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Wie%EF%BC%9F%20(UNDA%20Techno%20Remix).png", src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Wie%EF%BC%9F%20(UNDA%20Techno%20Remix).mp3" },
+    { title: "Só Eu Sei",              cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/S%C3%B3%20Eu%20Sei.png",                        src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/S%C3%B3%20Eu%20Sei.mp3" },
+    { title: "Fly-day Chinatown",      cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Fly-day%20Chinatown.png",                      src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Fly-day%20Chinatown.mp3" },
+    { title: "Stay With Me",           cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Stay%20with%20me.png",                         src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Stay%20with%20me.mp3" },
+    { title: "Fantasy",                cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Fantasy.png",                                  src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Fantasy.mp3" },
+    { title: "Remember Summer Days",   cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Remember%20Summer%20Days.png",                 src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Remember%20Summer%20Days.mp3" },
+    { title: "Mirage (Yofukashi no Uta)", cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Mirage%20(Yofukashi%20no%20Uta).png",      src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Mirage%20(Yofukashi%20no%20Uta).mp3" },
+    { title: "Aiue - Urusei Yatsura",  cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Aiue%20Urusei%20Yatsura%20(2022).png",        src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Aiue%20Urusei%20Yatsura%20(2022).mp3" }
 ];
 
 let currentTrackIndex = Math.floor(Math.random() * playlist.length);
@@ -1164,6 +1173,54 @@ playerStage.addEventListener('wheel', (e) => {
         }
     });
 })();
+
+// =========================================
+// PAGE VISIBILITY — pausar timers fora do ecrã
+// =========================================
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        if (window._nightCtrl) window._nightCtrl.pause();
+        if (window._rainCtrl) window._rainCtrl.pauseDrops();
+        document.querySelectorAll('.screen-drop').forEach(d => d.remove());
+    } else {
+        if (window._nightCtrl) window._nightCtrl.resume();
+        if (window._rainCtrl) window._rainCtrl.resumeDrops();
+    }
+});
+
+// =========================================
+// KEYBOARD CONTROLS
+// =========================================
+document.addEventListener('keydown', function(e) {
+    // Ignorar se o utilizador estiver a escrever num input/textarea
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+    switch (e.code) {
+        case 'Space':
+            e.preventDefault();
+            togglePlay();
+            break;
+        case 'ArrowRight':
+            e.preventDefault();
+            nextTrack();
+            break;
+        case 'ArrowLeft':
+            e.preventDefault();
+            prevTrack();
+            break;
+        case 'ArrowUp':
+            e.preventDefault();
+            volumeSlider.value = Math.min(100, parseInt(volumeSlider.value) + 5);
+            volumeSlider.dispatchEvent(new Event('input'));
+            break;
+        case 'ArrowDown':
+            e.preventDefault();
+            volumeSlider.value = Math.max(0, parseInt(volumeSlider.value) - 5);
+            volumeSlider.dispatchEvent(new Event('input'));
+            break;
+    }
+});
 
 // =========================================
 // PHYSICS (Profile Image)
