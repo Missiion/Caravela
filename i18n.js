@@ -45,15 +45,12 @@
             sigMenuShowAll:     'Show all signatures',
             sigMenuEdit:        'Edit my signature',
             sigMenuHideRefresh: 'Hide until refresh',
-            sigMenuHideForever: 'Hide forever',
+            sigMenuToggleGames: 'Collapse Games',
+            sigMenuToggleGamesOn: 'Attach Games',
             sigEditTitle:       'Edit Signature',
             sigEditPlaceholder: 'New name...',
             sigEditCancel:      'Cancel',
             sigEditSave:        'Save',
-            sigHideTitle:       'Are you sure?',
-            sigHideSub:         "This can't be undone",
-            sigHideCancel:      'Cancel',
-            sigHideConfirm:     'Hide forever',
             sigNoResults:       'NO SIGNATURES FOUND',
             sigLoading:         'LOADING...',
             sigSearchPlaceholder: 'Search...',
@@ -172,15 +169,12 @@
             sigMenuShowAll:     'Ver todas as assinaturas',
             sigMenuEdit:        'Editar a minha assinatura',
             sigMenuHideRefresh: 'Esconder at\u00E9 recarregar',
-            sigMenuHideForever: 'Esconder para sempre',
+            sigMenuToggleGames: 'Colapsar Jogos',
+            sigMenuToggleGamesOn: 'Anexar Jogos',
             sigEditTitle:       'Editar Assinatura',
             sigEditPlaceholder: 'Novo nome...',
             sigEditCancel:      'Cancelar',
             sigEditSave:        'Guardar',
-            sigHideTitle:       'Tens a certeza?',
-            sigHideSub:         'Isto n\u00E3o pode ser desfeito',
-            sigHideCancel:      'Cancelar',
-            sigHideConfirm:     'Esconder para sempre',
             sigNoResults:       'NENHUMA ASSINATURA ENCONTRADA',
             sigLoading:         'A CARREGAR...',
             sigSearchPlaceholder: 'Pesquisar...',
@@ -387,10 +381,16 @@
                 ? t.playerPlaying : t.playerStopped;
         }
 
-        ['sigMenuShowAll','sigMenuEdit','sigMenuHideRefresh','sigMenuHideForever'].forEach(function (id) {
+        ['sigMenuShowAll','sigMenuEdit','sigMenuHideRefresh'].forEach(function (id) {
             const el = document.getElementById(id);
             if (el) el.textContent = t[id];
         });
+
+        const toggleGamesBtn = document.getElementById('sigMenuToggleGames');
+        if (toggleGamesBtn) {
+            const isCollapsed = localStorage.getItem('suika_banner_collapsed') === '1';
+            toggleGamesBtn.textContent = isCollapsed ? t.sigMenuToggleGamesOn : t.sigMenuToggleGames;
+        }
 
         const editTitle   = document.querySelector('.sig-edit-title');
         const editInput   = document.getElementById('sigEditInput');
@@ -400,15 +400,6 @@
         if (editInput)   editInput.placeholder   = t.sigEditPlaceholder;
         if (editCancel)  editCancel.textContent  = t.sigEditCancel;
         if (editConfirm) editConfirm.textContent = t.sigEditSave;
-
-        const hideTitle   = document.querySelector('.sig-hide-title');
-        const hideSub     = document.querySelector('.sig-hide-sub');
-        const hideCancel  = document.getElementById('sigHideCancel');
-        const hideConfirm = document.getElementById('sigHideConfirm');
-        if (hideTitle)   hideTitle.textContent   = t.sigHideTitle;
-        if (hideSub)     hideSub.textContent     = t.sigHideSub;
-        if (hideCancel)  hideCancel.textContent  = t.sigHideCancel;
-        if (hideConfirm) hideConfirm.textContent = t.sigHideConfirm;
 
         const sigSearch   = document.getElementById('sigSearch');
         const sigCloseBtn = document.getElementById('sigCloseBtn');
