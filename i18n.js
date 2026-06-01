@@ -529,15 +529,11 @@
     }
 
     // ══════════════════════════════════════════════════════════
-    // LANGUAGE TOGGLE — flag image, top-right corner below ticker
+    // LANGUAGE TOGGLE — flag via flagsapi shiny, abaixo dos dots de tema
     // ══════════════════════════════════════════════════════════
-    // =============================================
-    // POSICAO DA BANDEIRA -- altera aqui a vontade
-    var TOGGLE_TOP   = '44px';  // distancia ao topo   (ex: '52px', '60px')
-    var TOGGLE_RIGHT = '6px';   // distancia a direita (ex: '8px',  '14px')
-    // =============================================
-    var FLAG_EN = 'https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Bandeira_great_britan.png';
-    var FLAG_PT = 'https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Bandeira_Portugal.png';
+    // flagsapi.com serve PNGs com efeito shiny — GB e PT
+    var FLAG_EN = 'https://flagsapi.com/GB/flat/64.png';
+    var FLAG_PT = 'https://flagsapi.com/PT/flat/64.png';
 
     function createToggle() {
         var btn = document.createElement('button');
@@ -545,31 +541,30 @@
         btn.setAttribute('aria-label', 'Toggle language / Mudar idioma');
 
         var s = btn.style;
-        s.position       = 'fixed';
-        s.top            = TOGGLE_TOP;
-        s.right          = TOGGLE_RIGHT;
-        s.zIndex         = '300';
+        s.position       = 'absolute';
+        s.top            = '33px';   // abaixo dos dots: top(12px) + height(13px) + gap(8px)
+        s.right          = '14px';   // mesma margem direita dos dots do tema
+        s.zIndex         = '20';
         s.background     = 'none';
         s.border         = 'none';
         s.padding        = '0';
         s.cursor         = 'pointer';
         s.opacity        = '0.5';
         s.transition     = 'opacity 0.2s, transform 0.2s';
-        s.width          = '20px';   // small – flag proportions ~20×14
-        s.height         = '14px';
+        s.width          = '23px';
+        s.height         = '17px';
         s.display        = 'flex';
         s.alignItems     = 'center';
         s.justifyContent = 'center';
 
         var img = document.createElement('img');
-        // No border, no box-shadow — pure clean flag
-        img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;image-rendering:auto;border-radius:1px;';
         img.draggable = false;
         btn.appendChild(img);
 
         function render() {
             img.src   = currentLang === 'en' ? FLAG_EN : FLAG_PT;
-            img.alt   = currentLang === 'en' ? 'EN' : 'PT';
+            img.alt   = currentLang === 'en' ? 'GB' : 'PT';
             btn.title = currentLang === 'en'
                 ? 'Mudar para Portugu\u00EAs'
                 : 'Switch to English';
@@ -588,7 +583,14 @@
         });
 
         render();
-        document.body.appendChild(btn);
+
+        // Ancorar dentro da links-section para herdar o position:relative do container
+        var linksSection = document.querySelector('.links-section');
+        if (linksSection) {
+            linksSection.appendChild(btn);
+        } else {
+            document.body.appendChild(btn);
+        }
     }
 
     // ══════════════════════════════════════════════════════════
