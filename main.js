@@ -212,7 +212,8 @@ const playlist = [
     { title: "Fantasy",                cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Fantasy.png",                                  src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Fantasy.mp3" },
     { title: "Remember Summer Days",   cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Remember%20Summer%20Days.png",                 src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Remember%20Summer%20Days.mp3" },
     { title: "Mirage (Yofukashi no Uta)", cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Mirage%20(Yofukashi%20no%20Uta).png",      src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Mirage%20(Yofukashi%20no%20Uta).mp3" },
-    { title: "Aiue - Urusei Yatsura",  cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Aiue%20Urusei%20Yatsura%20(2022).png",        src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Aiue%20Urusei%20Yatsura%20(2022).mp3" }
+    { title: "Aiue - Urusei Yatsura",  cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Aiue%20Urusei%20Yatsura%20(2022).png",        src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Aiue%20Urusei%20Yatsura%20(2022).mp3" },
+    { title: "Guarda-me Esta Noite",   cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Guarda-me%20Esta%20Noite.png",                      src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Guarda-me%20Esta%20Noite.mp3" }
 ];
 
 let currentTrackIndex = Math.floor(Math.random() * playlist.length);
@@ -300,19 +301,46 @@ const PEEK_PX    = 22;
 const CARD_SIZE  = 110;
 const OVERLAP_PX = 6;
 
+// FIX B: Função auxiliar para obter o zoom effectivo do body.
+// CSS zoom no body afecta getBoundingClientRect() — as coordenadas retornadas
+// estão no espaço escalado (body coords), mas position:fixed é relativo ao
+// viewport real. Dividimos pela escala para obter coordenadas de viewport reais.
+// Fallback: element.currentCSSZoom (Baseline 2026) ou window.__uiScale ou 1.
+function _getBodyZoom() {
+    // Tenta window.__uiScale (definido pelo script de escala no <head>)
+    if (window.__uiScale && window.__uiScale !== 1) return window.__uiScale;
+    // Fallback: lê o zoom CSS do body directamente
+    try {
+        var z = parseFloat(getComputedStyle(document.body).zoom);
+        if (z && !isNaN(z) && z !== 1) return z;
+    } catch(e) {}
+    return 1;
+}
+
 function positionNextWrap(expanded) {
     const wrap   = document.getElementById('vhsNextWrap');
     const player = document.querySelector('.music-player-wrapper');
     if (!wrap || !player) return;
+
+    // getBoundingClientRect() com CSS zoom devolve coordenadas no espaço escalado.
+    // Para position:fixed (relativo ao viewport real), compensamos com o zoom.
+    const zoom = _getBodyZoom();
     const rect = player.getBoundingClientRect();
 
-    wrap.style.width  = CARD_SIZE + 'px';
-    wrap.style.height = CARD_SIZE + 'px';
-    wrap.style.left   = rect.left + 'px';
+    // Coordenadas reais no viewport (divididas pelo zoom)
+    const vpLeft = rect.left / zoom;
+    const vpTop  = rect.top  / zoom;
+
+    // O tamanho do card também precisa de ser escalado para corresponder ao player
+    const scaledCard = CARD_SIZE * zoom;
+
+    wrap.style.width  = scaledCard + 'px';
+    wrap.style.height = scaledCard + 'px';
+    wrap.style.left   = vpLeft + 'px';
     wrap.style.bottom = 'auto';
 
-    const topRest     = rect.top - PEEK_PX;
-    const topExpanded = rect.top - CARD_SIZE + OVERLAP_PX;
+    const topRest     = vpTop - PEEK_PX;
+    const topExpanded = vpTop - scaledCard + OVERLAP_PX;
 
     wrap.style.top = (expanded ? topExpanded : topRest) + 'px';
 }
@@ -557,7 +585,26 @@ function changeTrack(newIndex) {
 function nextTrack() { changeTrack((currentTrackIndex + 1) % playlist.length); }
 function prevTrack() { changeTrack((currentTrackIndex - 1 + playlist.length) % playlist.length); }
 
-musicAudio.onended = nextTrack;
+let isRepeating = false;
+
+musicAudio.onended = () => {
+    if (isRepeating) {
+        musicAudio.currentTime = 0;
+        musicAudio.play().catch(e => console.log(e));
+    } else {
+        nextTrack();
+    }
+};
+
+// Replay button toggle
+const vhsReplayBtn = document.getElementById('vhsReplayBtn');
+if (vhsReplayBtn) {
+    vhsReplayBtn.addEventListener('click', () => {
+        isRepeating = !isRepeating;
+        vhsReplayBtn.classList.toggle('active', isRepeating);
+    });
+}
+
 volumeSlider.oninput = (e) => {
     musicAudio.volume = e.target.value / 100;
     const pct = e.target.value + '%';
@@ -612,9 +659,11 @@ if (vhsToggleBtn) {
 
         const player = document.querySelector('.music-player-wrapper');
         const pr = player ? player.getBoundingClientRect() : titleEl.getBoundingClientRect();
-        const centreX = pr.left + pr.width / 2;
+        // FIX B: compensar o CSS zoom do body para position:fixed
+        const _z = _getBodyZoom();
+        const centreX = (pr.left + pr.width / 2) / _z;
         tooltip.style.left = Math.max(4, centreX - tw / 2) + 'px';
-        tooltip.style.top  = (pr.top - TOOLTIP_H - 10) + 'px';
+        tooltip.style.top  = (pr.top / _z - TOOLTIP_H - 10) + 'px';
         tooltip.classList.add('visible');
     }
 
@@ -1252,8 +1301,10 @@ document.addEventListener('keydown', function(e) {
     function checkSnap() {
         if (snapping) return;
         const wRect = wrapper.getBoundingClientRect();
+        // FIX B: compensar CSS zoom para comparar com px,py (coords viewport)
+        const _z = _getBodyZoom();
         const cx = px + W() / 2, cy = py + H() / 2;
-        const wx = wRect.left + wRect.width / 2, wy = wRect.top + wRect.height / 2;
+        const wx = wRect.left / _z + wRect.width / (2 * _z), wy = wRect.top / _z + wRect.height / (2 * _z);
         const dist = Math.hypot(cx - wx, cy - wy);
 
         if (dist < 90) {
@@ -1268,7 +1319,9 @@ document.addEventListener('keydown', function(e) {
     function snapBack() {
         snapping = true; isDragging = false; wrapper.classList.remove('snap-ready');
         const wRect = wrapper.getBoundingClientRect();
-        const targetX = wRect.left, targetY = wRect.top;
+        // FIX B: compensar CSS zoom para posicionamento fixed
+        const _z = _getBodyZoom();
+        const targetX = wRect.left / _z, targetY = wRect.top / _z;
         vx = 0; vy = 0;
 
         function animSnap() {
@@ -1289,7 +1342,9 @@ document.addEventListener('keydown', function(e) {
         if (activated) return;
         activated = true; wrapper.classList.add('broken');
         const rect = wrapper.getBoundingClientRect();
-        px = rect.left; py = rect.top;
+        // FIX B: compensar CSS zoom para posicionamento fixed
+        const _z = _getBodyZoom();
+        px = rect.left / _z; py = rect.top / _z;
         vx = (Math.random() - 0.5) * 14; vy = -12;
         physImg.style.left = px + 'px'; physImg.style.top = py + 'px';
         physImg.style.display = 'block'; physImg.classList.add('active');
