@@ -213,7 +213,9 @@ const playlist = [
     { title: "Remember Summer Days",   cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Remember%20Summer%20Days.png",                 src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Remember%20Summer%20Days.mp3" },
     { title: "Mirage (Yofukashi no Uta)", cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Mirage%20(Yofukashi%20no%20Uta).png",      src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Mirage%20(Yofukashi%20no%20Uta).mp3" },
     { title: "Aiue - Urusei Yatsura",  cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Aiue%20Urusei%20Yatsura%20(2022).png",        src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Aiue%20Urusei%20Yatsura%20(2022).mp3" },
-    { title: "Guarda-me Esta Noite",   cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Guarda-me%20Esta%20Noite.png",                      src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Guarda-me%20Esta%20Noite.mp3" }
+    { title: "Guarda-me Esta Noite",   cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Guarda-me%20Esta%20Noite.png",                      src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Guarda-me%20Esta%20Noite.mp3" },
+    { title: "A Cry 4 Love",           cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/A%20Cry%204%20Love.png",                             src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/A%20Cry%204%20Love.mp3" },
+    { title: "Ella Baila Sola",        cover: "https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Ella%20Baila%20Sola.png",                            src: "https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Ella%20Baila%20Sola.mp3" }
 ];
 
 let currentTrackIndex = Math.floor(Math.random() * playlist.length);
