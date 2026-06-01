@@ -8,22 +8,24 @@
         (function() {
             var scale = window.screen.width / 1920;
             if (scale === 1) return;
-            var isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+
+            // FIX A: Usar CSS zoom para todos os browsers (incluindo Firefox).
+            // Razão: transform:scale() no body cria um novo containing block para
+            // position:fixed — isso quebra o posicionamento de todos os elementos
+            // fixed no Firefox (player de música, relógio, ticker, etc.).
+            // A propriedade CSS zoom NÃO cria containing block, portanto os elementos
+            // position:fixed continuam relativos ao viewport real em todos os browsers.
+            // CSS zoom está disponível em todos os browsers modernos desde maio de 2024
+            // (Firefox 126+, Chrome, Edge, Safari).
+            var inv = (1 / scale) * 100;
             var styleEl = document.createElement('style');
-            if (isFirefox) {
-                // Firefox: transform: scale no body, compensar dimensões
-                var inv = (1 / scale) * 100;
-                styleEl.textContent =
-                    'body { transform: scale(' + scale + '); transform-origin: top left;' +
-                    ' width: ' + inv + 'vw !important; height: ' + inv + 'vh !important; }';
-            } else {
-                // Chromium/Safari: zoom no body, dimensões compensadas para cobrir o ecrã físico
-                var inv = (1 / scale) * 100;
-                styleEl.textContent =
-                    'body { zoom: ' + scale + ';' +
-                    ' width: ' + inv + 'vw !important; min-height: ' + inv + 'vh !important; }';
-            }
+            styleEl.textContent =
+                'body { zoom: ' + scale + ';' +
+                ' width: ' + inv + 'vw !important; min-height: ' + inv + 'vh !important; }';
             document.head.appendChild(styleEl);
+
+            // Guardar o scale para uso no JS (fix B do music player)
+            window.__uiScale = scale;
         })();
     </script>
     <link rel="stylesheet" href="styles.css">
@@ -121,7 +123,7 @@
                 <img src="https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Logo_anilist.png" alt="Anilist" class="icon">
                 Anilist
             </a>
-            <a href="https://trakt.tv/users/caravelaa/lists/i-saw-it?sort=rank,asc" class="link-btn" target="_blank">
+            <a href="https://app.trakt.tv/users/caravelaa/lists/series-i-watched?mode=media" class="link-btn" target="_blank">
                 <img src="https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Logo_trackt.png" alt="Trackt" class="icon">
                 Trackt
             </a>
@@ -258,6 +260,15 @@
                     <button class="vhs-toggle-btn" id="vhsToggleBtn" title="Play / Stop">
                         <svg class="btn-play-icon" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
                         <svg class="btn-pause-icon" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    </button>
+                    <button class="vhs-replay-btn" id="vhsReplayBtn" title="Repeat Track">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="17 1 21 5 17 9"/>
+                            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                            <polyline points="7 23 3 19 7 15"/>
+                            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                            <circle class="replay-dot" cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>
+                        </svg>
                     </button>
                     <div class="vhs-status-wrap">
                         <span class="vhs-status-text" id="vhsStatusText">Stopped</span>
@@ -638,7 +649,7 @@
         const TRIGGER_HEIGHT = 44;
         function checkMouse(e) {
             if (!wrap.classList.contains('visible')) return;
-            if (wrap.classList.contains('suika-disabled')) { wrap.classList.remove('open'); return; }
+            if (wrap.classList.contains('suika-games-open')) { wrap.classList.remove('open'); return; }
             if (!wrap.classList.contains('suika-collapsed')) return;
             if (!profile) return;
             const rect = profile.getBoundingClientRect();
