@@ -269,7 +269,7 @@
             document.getElementById('gamesZoneSection').style.display === 'flex') return;
 
         const wrap = document.querySelector('.suika-banner-wrap');
-        if (wrap) wrap.classList.add('suika-disabled');
+        if (wrap) wrap.classList.add('suika-games-open');
 
         const panel = buildGamesZonePanel();
         bindPanelButtons();
@@ -311,7 +311,7 @@
 
         window._gamesZoneOpen = false;
         const wrap = document.querySelector('.suika-banner-wrap');
-        if (wrap) wrap.classList.remove('suika-disabled');
+        if (wrap) wrap.classList.remove('suika-games-open');
 
         if (pacAnim) { pacAnim.stop(); pacAnim = null; }
 
