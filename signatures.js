@@ -378,7 +378,7 @@
         sigDisplayArea.className = 'sig-display-area view-grid';
         const filtered = signatures.filter(function (s) { return s.toLowerCase().includes(searchTerm); });
         if (filtered.length === 0) {
-            sigDisplayArea.innerHTML = '<div style="color:rgba(255,255,255,0.4);text-align:center;margin-top:30px;font-weight:700;font-size:0.7rem;letter-spacing:3px;">NO SIGNATURES FOUND</div>';
+            sigDisplayArea.innerHTML = '<div style="color:rgba(255,255,255,0.4);text-align:center;margin-top:30px;font-weight:700;font-size:0.7rem;letter-spacing:3px;">' + tr('sigNoResults') + '</div>';
             return;
         }
 
@@ -427,7 +427,7 @@
             signaturesSection.style.display = 'flex';
             void signaturesSection.offsetWidth;
             signaturesSection.classList.add('panel-visible');
-            sigDisplayArea.innerHTML = '<div id="sigLoadingMsg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.4);font-weight:700;font-size:0.7rem;letter-spacing:3px;transition:opacity 0.25s ease;">LOADING...</div>';
+            sigDisplayArea.innerHTML = '<div id="sigLoadingMsg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.4);font-weight:700;font-size:0.7rem;letter-spacing:3px;transition:opacity 0.25s ease;">' + tr('sigLoading') + '</div>';
             loadSignatures().then(function () {
                 const loadingEl = document.getElementById('sigLoadingMsg');
                 if (loadingEl) {
@@ -550,8 +550,8 @@
             isLocked = false; isActive = false; lastSubmit = 0; submitting = false;
             if (sigZone) sigZone.style.display = '';
             startIdle();
-            modResetBtn.textContent = '✅ Reset!';
-            setTimeout(function () { modResetBtn.textContent = '🗑 Reset Signature State'; }, 1500);
+            // Texto de feedback ("✅ Reset!") é tratado pelo i18n.js patchResetBtn()
+            // que mostra a versão traduzida consoante o idioma activo.
         });
     }
 
