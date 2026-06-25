@@ -505,32 +505,24 @@
         if (e.data.tipo === 'FN_GET_SCORE' || e.data.tipo === 'FN_SET_SCORE' || e.data.tipo === 'FN_GET_LEADERBOARD') {
             const _msg = e.data;
             const _src = e.source;
-            console.log('[FN bridge] recebido:', _msg.tipo, 'id:', _msg.id, 'bid:', _msg.bid);
             (async () => {
                 // Esperar Firebase ficar pronto
                 if (!window._sigFirebaseReady) {
-                    console.log('[FN bridge] a aguardar Firebase...');
                     await new Promise(resolve => {
                         document.addEventListener('sig-firebase-ready', resolve, { once: true });
                         setTimeout(resolve, 8000);
                     });
                 }
-                console.log('[FN bridge] Firebase pronto. _fnGetScore:', typeof window._fnGetScore, '_fnSetScore:', typeof window._fnSetScore);
                 try {
                     if (_msg.tipo === 'FN_GET_SCORE') {
                         const value = typeof window._fnGetScore === 'function'
                             ? await window._fnGetScore(_msg.bid)
                             : null;
-                        console.log('[FN bridge] GET_SCORE resultado:', value);
                         _src.postMessage({ tipo: 'FN_RESP', id: _msg.id, value }, '*');
                     }
                     else if (_msg.tipo === 'FN_SET_SCORE') {
-                        console.log('[FN bridge] SET_SCORE bid:', _msg.bid, 'score:', _msg.score);
                         if (typeof window._fnSetScore === 'function') {
                             await window._fnSetScore(_msg.bid, _msg.score);
-                            console.log('[FN bridge] SET_SCORE guardado com sucesso');
-                        } else {
-                            console.warn('[FN bridge] _fnSetScore não existe!');
                         }
                         _src.postMessage({ tipo: 'FN_RESP', id: _msg.id, value: true }, '*');
                     }
@@ -538,7 +530,6 @@
                         const value = typeof window._fnGetLeaderboard === 'function'
                             ? await window._fnGetLeaderboard()
                             : [];
-                        console.log('[FN bridge] GET_LEADERBOARD entradas:', value.length);
                         _src.postMessage({ tipo: 'FN_RESP', id: _msg.id, value }, '*');
                     }
                 } catch(err) {
