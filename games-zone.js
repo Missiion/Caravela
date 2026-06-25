@@ -211,7 +211,7 @@
 
         section.innerHTML = `
             <div class="gz-header-row">
-		<div class="gz-neon-title">GAMES</div>
+                <div class="gz-neon-title">GAMES</div>
                 <button class="gz-back-btn" id="gzBackBtn">${(window._i18n && window._i18n.get('gzBack')) || '\u2190 BACK'}</button>
             </div>
 
@@ -369,12 +369,6 @@
             backBtn.addEventListener('click', closeGamesZone);
         }
 
-        const lbBtn = document.getElementById('gzLbBtn');
-        if (lbBtn && !lbBtn._gzBound) {
-            lbBtn._gzBound = true;
-            lbBtn.addEventListener('click', () => {});
-        }
-
         const suikaCard = document.getElementById('gzCardSuika');
         if (suikaCard && !suikaCard._gzBound) {
             suikaCard._gzBound = true;
@@ -507,28 +501,6 @@
     transition: background 0.2s, transform 0.15s;
 }
 .gz-back-btn:hover {
-    background: var(--cor-borda-principal, #283593);
-    color: var(--cor-texto-titulo, #fff);
-    transform: translate(-1px,-1px);
-}
-
-/* ── Neon title ── */
-.gz-lb-btn {
-    background: var(--cor-botao-bg, rgba(0,0,0,0.5));
-    border: 1px solid var(--cor-borda-principal, #283593);
-    box-shadow: 2px 2px 0 var(--cor-sombra, #b71c1c);
-    color: var(--cor-texto-titulo, rgba(255,255,255,0.92));
-    font-family: 'Inter', sans-serif;
-    font-size: 0.65rem;
-    font-weight: 900;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    padding: 8px 16px;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: background 0.2s, transform 0.15s;
-}
-.gz-lb-btn:hover {
     background: var(--cor-borda-principal, #283593);
     color: var(--cor-texto-titulo, #fff);
     transform: translate(-1px,-1px);
