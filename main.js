@@ -559,10 +559,10 @@ function togglePlay() {
             musicAudio.load();
             musicAudio.addEventListener('canplay', function onCanPlay() {
                 musicAudio.removeEventListener('canplay', onCanPlay);
-                musicAudio.play().then(() => { isPlaying = true; updateCards(); }).catch(e => console.log(e));
+                musicAudio.play().then(() => { isPlaying = true; updateCards(); }).catch(() => {});
             }, { once: true });
         } else {
-            musicAudio.play().then(() => { isPlaying = true; updateCards(); }).catch(e => console.log(e));
+            musicAudio.play().then(() => { isPlaying = true; updateCards(); }).catch(() => {});
         }
     } else {
         musicAudio.pause();
@@ -578,7 +578,7 @@ function changeTrack(newIndex) {
     if (isPlaying) {
         musicAudio.addEventListener('canplay', function onCanPlay() {
             musicAudio.removeEventListener('canplay', onCanPlay);
-            musicAudio.play().catch(e => console.log(e));
+            musicAudio.play().catch(() => {});
         }, { once: true });
     }
     updateCards();
@@ -592,7 +592,7 @@ let isRepeating = false;
 musicAudio.onended = () => {
     if (isRepeating) {
         musicAudio.currentTime = 0;
-        musicAudio.play().catch(e => console.log(e));
+        musicAudio.play().catch(() => {});
     } else {
         nextTrack();
     }
