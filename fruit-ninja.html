@@ -1,9 +1,51 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fruit Ninja</title>
+<script>
+    // ─────────────────────────────────────────────────────────────
+    // VIEWPORT-BASED SCALING (fallback para acesso directo)
+    //
+    // Quando este ficheiro é carregado dentro do iframe do game-launcher,
+    // o zoom do parent (index.html) já escala o conteúdo visualmente.
+    // O iframe vê innerWidth=1920 (layout do parent), pelo que scale=1
+    // e este script é um no-op — correcto.
+    //
+    // Quando acedido directamente (sem parent), este script aplica o
+    // mesmo scaling do hub para que o jogo cresça proporcionalmente
+    // em resoluções maiores (1440p, 4K).
+    // ─────────────────────────────────────────────────────────────
+    (function() {
+        var BASE_WIDTH = 1920;
+        var styleEl = document.createElement('style');
+        document.head.appendChild(styleEl);
+
+        function applyScale() {
+            var scale = window.innerWidth / BASE_WIDTH;
+            window.__uiScale = scale;
+            if (scale === 1) {
+                styleEl.textContent = '';
+                return;
+            }
+            var inv = (1 / scale) * 100;
+            // height (não min-height) para sobrepor o height:100vh do CSS
+            styleEl.textContent =
+                'body { zoom: ' + scale + ';' +
+                ' width: ' + inv + 'vw !important;' +
+                ' height: ' + inv + 'vh !important; }';
+        }
+
+        applyScale();
+
+        var rt = null;
+        window.addEventListener('resize', function() {
+            if (rt) clearTimeout(rt);
+            rt = setTimeout(applyScale, 100);
+        });
+    })();
+</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Bangers&display=swap');
   * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
@@ -1093,7 +1135,6 @@ window.addEventListener('message', function(e) {
     _fnBrowserId = e.data.bid  || null;
     _fnSigName   = (e.data.name || '???').toUpperCase();
     _fnUserReady = true;
-    console.log('[FN iframe] user info recebida. bid:', _fnBrowserId, 'name:', _fnSigName);
     _fnUserCallbacks.forEach(cb => cb());
     _fnUserCallbacks.length = 0;
   }
@@ -1129,7 +1170,6 @@ function fnAsk(tipo, payload) {
   return new Promise(resolve => {
     const id = ++_fnCallId;
     _fnCallbacks[id] = resolve;
-    console.log('[FN iframe] a enviar:', tipo, 'id:', id, payload);
     try {
       window.parent.postMessage({ tipo, id, ...payload }, '*');
     } catch(e) {
@@ -1149,7 +1189,6 @@ function fnAsk(tipo, payload) {
 // Receber respostas do pai
 window.addEventListener('message', function(e) {
   if (e.data && e.data.tipo === 'FN_RESP') {
-    console.log('[FN iframe] resposta recebida id:', e.data.id, 'value:', e.data.value);
     if (_fnCallbacks[e.data.id]) {
       const cb = _fnCallbacks[e.data.id];
       delete _fnCallbacks[e.data.id];
@@ -1164,15 +1203,12 @@ async function lbAddScore(pts) {
   await fnWaitForUser(); // garante que temos o browserId do pai
   const bid  = fnGetBrowserId();
   const name = fnGetSigName();
-  console.log('[FN iframe] lbAddScore. pts:', pts, 'bid:', bid, 'name:', name);
   if (!bid) {
     console.warn('[FN iframe] sem browserId — utilizador sem assinatura.');
     return;
   }
   const existing = await fnAsk('FN_GET_SCORE', { bid });
-  console.log('[FN iframe] score existente:', existing);
   if (existing === null || existing === undefined || pts > Number(existing)) {
-    console.log('[FN iframe] a guardar novo recorde:', pts);
     await fnAsk('FN_SET_SCORE', { bid, score: pts });
     // Mostrar aviso de novo recorde no game over
     const notice = document.getElementById('fn-hs-notice');
