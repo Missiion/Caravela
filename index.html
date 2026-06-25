@@ -5,31 +5,60 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Master HUB</title>
     <script>
+        // ─────────────────────────────────────────────────────────────
+        // VIEWPORT-BASED SCALING
+        // O website foi desenhado para 1920px de largura (1080p).
+        // Esta função calcula um factor de escala baseado na largura
+        // real do viewport (window.innerWidth) — NÃO em screen.width.
+        //
+        // Razão: screen.width é a resolução física do monitor, que não
+        // corresponde ao viewport do browser em janelas não-maximizadas,
+        // em monitores com scaling do SO, ou em ambientes headless.
+        // innerWidth é sempre o viewport CSS real.
+        //
+        // Usa CSS zoom (não transform:scale) porque:
+        //  • zoom NÃO cria containing block → position:fixed funciona
+        //  • zoom afecta o layout real (não é só visual como scale)
+        //  · Suportado em todos os browsers modernos desde maio 2024
+        //    (Firefox 126+, Chrome, Edge, Safari)
+        //
+        // O body recebe zoom + width/min-height compensados para que
+        // o conteúdo de 1920px preencha qualquer viewport.
+        // ─────────────────────────────────────────────────────────────
         (function() {
-            var scale = window.screen.width / 1920;
-            if (scale === 1) return;
-
-            // FIX A: Usar CSS zoom para todos os browsers (incluindo Firefox).
-            // Razão: transform:scale() no body cria um novo containing block para
-            // position:fixed — isso quebra o posicionamento de todos os elementos
-            // fixed no Firefox (player de música, relógio, ticker, etc.).
-            // A propriedade CSS zoom NÃO cria containing block, portanto os elementos
-            // position:fixed continuam relativos ao viewport real em todos os browsers.
-            // CSS zoom está disponível em todos os browsers modernos desde maio de 2024
-            // (Firefox 126+, Chrome, Edge, Safari).
-            var inv = (1 / scale) * 100;
+            var BASE_WIDTH = 1920;
             var styleEl = document.createElement('style');
-            styleEl.textContent =
-                'body { zoom: ' + scale + ';' +
-                ' width: ' + inv + 'vw !important; min-height: ' + inv + 'vh !important; }';
             document.head.appendChild(styleEl);
 
-            // Guardar o scale para uso no JS (fix B do music player)
-            window.__uiScale = scale;
+            function applyScale() {
+                var scale = window.innerWidth / BASE_WIDTH;
+                window.__uiScale = scale;
+
+                // A exactamente 1:1, limpar estilos inline para evitar
+                // problemas de scrollbar com 100vw (inclui largura da scrollbar)
+                if (scale === 1) {
+                    styleEl.textContent = '';
+                    return;
+                }
+
+                var inv = (1 / scale) * 100;
+                styleEl.textContent =
+                    'body { zoom: ' + scale + ';' +
+                    ' width: ' + inv + 'vw !important;' +
+                    ' min-height: ' + inv + 'vh !important; }';
+            }
+
+            applyScale();
+
+            // Recalcular ao redimensionar a janela (debounce 100ms)
+            var rt = null;
+            window.addEventListener('resize', function() {
+                if (rt) clearTimeout(rt);
+                rt = setTimeout(applyScale, 100);
+            });
         })();
     </script>
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="suika.css">
     <link rel="stylesheet" href="game-launcher.css">
 </head>
 <body>
