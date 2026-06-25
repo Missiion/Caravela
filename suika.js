@@ -811,7 +811,7 @@
     };
 
     function init() {
-        console.log('[Suika] pronto');
+        // Pronto — sem logging em produção
     }
 
     if (document.readyState === 'loading') {
