@@ -139,16 +139,20 @@
      clique é reencaminhado para o moonBtn original (main.js: tema,
      estrelas, cometas, localStorage) e o estado activo espelha a
      classe night-mode do body.
-   • Som do vídeo (POLÍTICA POR BROWSER — ver STRICT_AUDIO no código):
-     browsers Chromium → LIGADO por defeito, entra com FADE-IN suave
-     (0 → volume, ~2s na 1.ª activação); se o browser bloquear o
-     unmute programático, o 1.º gesto (clique/tecla/scroll) retoma o
-     áudio com o mesmo fade. Browsers Firefox → o som arranca SEMPRE
-     mudo: o Firefox PAUSA o vídeo quando um autoplay muted é desmutado
-     programaticamente fora de um gesto (era exactamente o bug "o vídeo
-     fica parado no Firefox") — lá, o som liga apenas pelo BOTÃO DE SOM
-     (clique directo, síncrono — sempre aceite) ou pelo 1.º gesto se o
-     som já estava pedido. Espírito do resto do hub: tudo por gesto.
+   • Som do vídeo (v14 — IGUAL em todos os browsers, ver STRICT_AUDIO no
+     código): LIGADO por defeito, entra com FADE-IN suave (0 → volume,
+     ~2s na 1.ª activação). Isto já foi POLÍTICA POR BROWSER: o Firefox
+     arrancava sempre mudo, porque desmutar programaticamente FORA de um
+     gesto faz o Firefox PAUSAR o vídeo a meio ("o vídeo fica parado no
+     Firefox") — e a activação antiga nascia de um scroll no carrossel,
+     sem clique nenhum. Desde que a activação passou a exigir um CLIQUE
+     de confirmação (ver "SELECÇÃO EM DOIS PASSOS"), esse clique É o
+     gesto que falta: o pedido de som corre SÍNCRONO dentro dele (mesma
+     técnica do wantSound em switchVideo/loadVideoInto), por isso deixou
+     de ser preciso mutar o Firefox à partida. Se o browser mesmo assim
+     bloquear o unmute programático, o 1.º gesto seguinte (clique/tecla/
+     scroll) retoma o áudio com o mesmo fade. Espírito do resto do hub:
+     tudo por gesto.
      HINT DE SOM (Firefox): enquanto o utilizador NUNCA tiver clicado no
      botão de som/mute (marca PERSISTENTE em localStorage — sobrevive a
      refreshes), o ícone PULSA suavemente em VERMELHO sempre que fica
@@ -167,9 +171,11 @@
      chamada para depois do onReady (a cadeia assíncrona download da
      API → criação do iframe → handshake) perde a ligação ao gesto — o
      motivo nº 1 de "o vídeo fica parado" no Firefox;
-     (3) STRICT_AUDIO: em browsers Firefox o áudio arranca mudo e só
-     liga por clique (a desmutar programática fora do gesto faria o
-     Firefox PAUSAR o vídeo a meio da revelação).
+     (3) STRICT_AUDIO (v14): já não muda o DEFAULT do som — só continua
+     a decidir COMO o som liga: nunca por um unMute() tardio/assíncrono
+     fora de gesto (isso é que pausaria o vídeo), sempre por um pedido
+     síncrono dentro de um clique real (activação ou troca) — ver
+     wantSound em loadVideoInto/createPlayer/becomeActive.
      Browsers Chromium: comportamento INALTERADO (e a 1.ª activação
      fica ainda mais rápida graças à pré-carga).
    • Cada switch REUTILIZA o iframe via loadVideoById (rápido).
@@ -565,9 +571,17 @@ let zenOn = false;            // modo zen activo (vídeo visível)
 let activeOption = null;      // opção em reprodução (null = fundo de imagem)
 let activeVideoId = null;     // id do vídeo em reprodução
 let selectedIdx = 0;          // opção seleccionada no carrossel (0 = default)
-let soundOn = !STRICT_AUDIO;  // som do vídeo — Chromium: LIGADO (fade-in na
-                              // revelação, como sempre); Firefox: começa
-                              // MUDO e liga-se no botão de som (gesto)
+let soundOn = true;           // som do vídeo — LIGADO por defeito em TODOS os
+                              // browsers (fade-in na revelação). Antes o
+                              // Firefox arrancava sempre MUDO (STRICT_AUDIO)
+                              // porque a activação nascia de um scroll sem
+                              // clique; agora a activação só acontece pelo
+                              // CLIQUE de confirmação no centro do carrossel
+                              // (ver zenBtn.addEventListener) — um gesto real,
+                              // igual ao que já permite o unMute() síncrono
+                              // nas trocas de vídeo (switchVideo/wantSound) —
+                              // por isso deixou de haver motivo para a
+                              // distinção por browser aqui.
 let volume = parseInt(volSlider.value, 10);
 if (isNaN(volume) || volume < 0) volume = 20;   // default: 20%
 let carouselOpen = false;
@@ -1050,12 +1064,19 @@ function randomVideoOf(opt) {
 function buildQueue(opt, firstVideo) {
     const pool = opt.videos.filter(function(v) { return !failedIds.has(v.id); });
     shuffleList(pool);
+    let startIdx = 0;
     if (firstVideo) {
         const i = pool.indexOf(firstVideo);
         if (i > 0) { const fv = pool.splice(i, 1)[0]; pool.unshift(fv); }
+        // firstVideo (hit da pré-carga) já está a ser exibido — a queue
+        // tem de começar a SEGUIR dele (posição 1). Sem isto, o 1.º avanço
+        // (botão de troca / _zenCtrl.next) serve de volta videoQueue[0],
+        // que é o MESMO vídeo já no ecrã — o utilizador via "nada mudar"
+        // no 1.º clique e só ao 2.º clique é que avançava de facto.
+        if (i >= 0) startIdx = 1;
     }
     videoQueue = pool;
-    queueIdx = 0;
+    queueIdx = startIdx;
 }
 
 // Serve o PRÓXIMO vídeo da queue, POR ORDEM: nunca repete um já
@@ -1420,7 +1441,13 @@ function activateOption(opt) {
         buildQueue(opt, video);
         if (!video) video = serveNextVideo();
         if (!video) { deactivateZen(); return; }
-        loadVideoInto(slot, video);
+        // v14: mesma lógica de "SOM NAS TROCAS" do switchVideo — este
+        // loadVideoInto ainda corre dentro do gesto síncrono do clique de
+        // confirmação (zenBtn), quer reutilize o player pré-carregado
+        // (unMute síncrono) quer tenha de criar um player novo (unMute no
+        // onReady de createPlayer — o mesmo caminho que o 1.º switchVideo
+        // da sessão já usa hoje, com sucesso, para o slot ainda sem player)
+        loadVideoInto(slot, video, soundOn);
     });
 }
 
@@ -1441,9 +1468,10 @@ function deactivateZen() {
                           // também verifica !zenOn)
     stopWheel();   // a roda pode estar a girar (espera interrompida) —
                    // sem isto continuaria infinitamente no carrossel
-    // Áudio: muta já (o vídeo vai parar) e repõe o DEFAULT do BROWSER —
-    // a próxima activação volta a começar com som LIGADO + fade-in nos
-    // Chromium (como sempre) e MUDO nos Firefox (liga no botão).
+    // Áudio: muta já (o vídeo vai parar) e repõe o DEFAULT — a próxima
+    // activação volta a começar com som LIGADO + fade-in, igual em
+    // todos os browsers (ver nota em "let soundOn" sobre o fim da
+    // distinção Firefox/Chromium).
     stopFadeAudio();
     // QUALIDADE: limpar as amostras desta sessão de reprodução (o modo
     // max/floor mantém-se — a rede não mudou por desligar o vídeo; a
@@ -1457,9 +1485,9 @@ function deactivateZen() {
         const p = players[s];
         if (p && p.mute) { try { p.mute(); } catch (e) {} }
     });
-    soundOn = !STRICT_AUDIO;
+    soundOn = true;
     audioStarted = false;
-    applySoundVisual(soundOn);   // visual coerente com o default do browser
+    applySoundVisual(soundOn);   // visual coerente com o novo default (ligado)
     disengageVideoMode();   // restaura hub + botões IMEDIATAMENTE
     updateZenBtn();
     updateAudioWrap();
@@ -2342,6 +2370,44 @@ function stopWheel() {
         });
 }
 
+// CONFIRMAÇÃO DE SELECÇÃO (v15) — ponto único partilhado pelo clique
+// directo num ícone do carrossel E pelo clique no zenBtn (centro/botão
+// fechado). Substitui a antiga distinção "só pré-visualiza vs. só o
+// botão confirma": agora QUALQUER clique real (num ícone concreto ou
+// no botão) confirma de imediato — a diferença entre os dois pontos de
+// entrada é só o `fallbackToFirst`.
+//   • opt === activeOption (já a tocar) → pausa/desliga (repõe default);
+//     ainda protegido por readyToEngage — nunca cancela uma carga em curso.
+//   • opt funcional e diferente do que está activo → activa/TROCA logo
+//     para essa categoria (activateOption já trata o resto).
+//   • opt é o "default" (functional:false) → desliga se algo estiver a
+//     tocar; se nada estiver activo, fica no default (ou arranca a 1.ª
+//     categoria funcional quando fallbackToFirst=true — caso do zenBtn
+//     fechado, clique rápido sem abrir o carrossel).
+function confirmSelection(opt, fallbackToFirst) {
+    if (zenOn && opt === activeOption) {
+        if (!readyToEngage) return;   // carga em curso — ignora o clique
+        selectedIdx = 0;
+        deactivateZen();
+        return;
+    }
+    if (opt && opt.functional) {
+        activateOption(opt);
+        return;
+    }
+    if (zenOn) {
+        if (!readyToEngage) return;
+        selectedIdx = 0;
+        deactivateZen();
+    } else if (fallbackToFirst) {
+        const first = firstFunctional();
+        if (first) activateOption(first);
+    } else {
+        selectedIdx = 0;
+        updateZenBtn();
+    }
+}
+
 // Construção das opções do carrossel (v10: TODAS as opções são SVG,
 // incluindo a default — o PNG oficial foi substituído pelo play+arco).
 // --csc = escala do item CENTRO no estado FECHADO: parte EXACTAMENTE do
@@ -2360,9 +2426,18 @@ ZEN_OPTIONS.forEach(function(opt, i) {
                                             // crossfade botão↔centro é
                                             // sem salto em qualquer opção
     b.innerHTML = optIconHtml(opt);
+    // v15: clique DIRECTO num ícone do carrossel — este handler só chega
+    // a correr para o ícone SUPERIOR (o centro tem pointer-events:none e
+    // os cliques aí caem no zenBtn por baixo). É um clique real e síncrono
+    // sobre um elemento concreto, exactamente o mesmo tipo de gesto que o
+    // Firefox já aceita na confirmação — por isso já não precisa de passar
+    // pelo passo de pré-visualização: selecciona E confirma no mesmo
+    // gesto (ver confirmSelection). Antes disto chamava só selectOption(i),
+    // o que deixava a categoria "presa" numa pré-visualização que o fecho
+    // do carrossel desfazia se o utilizador não voltasse a clicar.
     b.addEventListener('click', function(e) {
         e.stopPropagation();
-        selectOption(i);
+        confirmSelection(ZEN_OPTIONS[i], false);
     });
     track.appendChild(b);
 });
@@ -2383,7 +2458,13 @@ ZEN_OPTIONS.forEach(function(opt, i) {
 function renderCarousel() {
     const n = ZEN_OPTIONS.length;
     const items = track.children;
-    const showPause = pauseHintArmed && zenOn && !!activeOption;
+    // v15: só mostra o ícone de pausa quando a opção CENTRADA é
+    // realmente a que está a tocar — antes disparava sempre que ALGO
+    // estava activo, mesmo com outra categoria em pré-visualização no
+    // centro (scroll), fazendo parecer que o clique ia pausar em vez de
+    // trocar de categoria.
+    const showPause = pauseHintArmed && zenOn && !!activeOption &&
+        ZEN_OPTIONS[selectedIdx] === activeOption;
     for (let i = 0; i < items.length; i++) {
         let d = (i - selectedIdx + n) % n;
         if (d > n / 2) d -= n;
@@ -2495,29 +2576,19 @@ wrap.addEventListener('wheel', function(e) {
 // desactivada); desligado → liga (opção seleccionada/1ª funcional)
 zenBtn.addEventListener('click', function(e) {
     e.stopPropagation();
-    if (zenOn) {
-        // Espera do vídeo em curso (roda a girar): o clique é IGNORADO —
-        // o utilizador clica "para ver se algo está realmente a acontecer"
-        // e sem querer TERMINARIA o carregamento. (O carrossel continua
-        // livre: trocar de opção ou voltar ao default continua possível
-        // e é um acto intencional; só o botão/centro fica inerte.)
-        if (!readyToEngage) return;
-        // RESET ao default ANTES do deactivate → o updateZenBtn interno
-        // já renderiza o ícone oficial (botão + centro do carrossel)
-        selectedIdx = 0;
-        deactivateZen();
-    } else {
-        let opt = ZEN_OPTIONS[selectedIdx];
-        if (!opt.functional) opt = firstFunctional();
-        if (opt) activateOption(opt);
-    }
+    // v15: usa confirmSelection com o que estiver CENTRADO no momento —
+    // cobre tanto o botão fechado (selectedIdx = opção activa ou 0) como
+    // o centro do carrossel aberto depois de uma pré-visualização por
+    // scroll (selectedIdx pode já não ser a opção activa — nesse caso
+    // troca de categoria em vez de pausar, ver confirmSelection).
+    confirmSelection(ZEN_OPTIONS[selectedIdx], true);
 });
 
 // ═════════════════════════════════════════════════════════════════
 // ARRANQUE
 // ═════════════════════════════════════════════════════════════════
-applySoundVisual(!STRICT_AUDIO);   // som: Chromium LIGADO (fade-in ao
-                                   // activar) · Firefox MUDO (botão)
+applySoundVisual(true);   // som LIGADO por defeito (fade-in ao activar),
+                          // igual em todos os browsers
 renderCarousel();
 updateZenBtnTitle();      // label inicial do botão (estado default)
 sizeCovers();
