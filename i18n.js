@@ -72,6 +72,41 @@
             dryerBtnTitle:   'Toggle Dryer',
             windBtnTitle:    'Toggle Wind',
 
+            zenBtnTitle:     'Zen Video Background',   // (legado — o title do
+                                                    // botão zen é DINÂMICO
+                                                    // por estado, ver
+                                                    // _zenSyncLang abaixo)
+            zenVideoBg:      'Video Background',
+            zenLoading:      'Loading',
+            zenStop:         'Stop',
+            zenAudioBtnTitle:'Video Sound',
+            zenOptDefault:   'Default',
+            zenOptDriving:   'Driving',
+            zenOptGames:     'Games',
+            zenOptHorror:    'Horror',      // (v10 — substituiu o placeholder waves)
+            zenOptSpace:     'Space',       // (v10 — substituiu o placeholder fire)
+            zenOptFire:      'Fireplace',   // (v11 — REACTIVADA: a Lareira é
+                                           //  agora categoria REAL — substituiu
+                                           //  o último placeholder skies)
+            // (v11) As chaves das antigas placeholders waves/skies ficam
+            // guardadas para uma futura reactivação, se pedida:
+            zenOptWaves:     'Ocean Waves',
+            zenOptSkies:     'Starry Skies',
+            // (v10) Verificador de vídeos (menu "Leo" → Verify All
+            // Videos) — strings entregues ao zen-video.js via
+            // _zenSyncLang; {n}/{total} são substituídos no código
+            zenCheckTitle:       '\uD83D\uDCFA Video Check',
+            zenCheckLoading:     'Loading the YouTube API...',
+            zenCheckChecking:    'Checking',
+            zenCheckCheckingBtn: 'Checking...',
+            zenCheckAllOk:       'All {n} videos are online — everything is fine.',
+            zenCheckProblems:    '{n} of {total} videos have problems — report downloaded.',
+            zenCheckClose:       'Close',
+            zenCheckApiFail:     'Could not load the YouTube API — check the connection.',
+            zenCheckNoVideos:    'No videos to check.',
+            zenCheckWarn:        'YouTube unreachable? Check network/adblock — every video failed.',
+            zenCheckNoResponse:  'No response within 15s',
+
             modPanelTooltip:    '\u26A1 Mod Panel',
             modTitleModeration: '\u26A1 Moderation',
             modBtnSnowHint:     '\u2744 Force Snow Notice',
@@ -86,6 +121,8 @@
             modBtnForceSigs:    '\uD83D\uDCDC Force Show Signatures',
             modBtnResetSig:     '\uD83D\uDDD1 Reset Signature State',
             modBtnResetDone:    '\u2705 Reset!',
+            modTitleVideos:     '\uD83D\uDCFA Video Background',
+            modBtnCheckVideos:  '\uD83D\uDD0D Verify All Videos',
 
             // ── Suika Game ──
             suikaSectionTitle:   'SUIKA',
@@ -196,6 +233,37 @@
             dryerBtnTitle:   'Ligar/Desligar Secador',
             windBtnTitle:    'Ligar/Desligar Vento',
 
+            zenBtnTitle:     'Fundo Zen em Vídeo',     // (legado — ver _zenSyncLang)
+            zenVideoBg:      'Video de fundo',
+            zenLoading:      'A carregar',
+            zenStop:         'Parar',
+            zenAudioBtnTitle:'Som do Vídeo',
+            zenOptDefault:   'Padrão',
+            zenOptDriving:   'Condução',
+            zenOptGames:     'Jogos',
+            zenOptHorror:    'Terror',      // (v10 — substituiu o placeholder waves)
+            zenOptSpace:     'Espaço',      // (v10 — substituiu o placeholder fire)
+            zenOptFire:      'Lareira',     // (v11 — REACTIVADA: categoria REAL
+                                           //  — substituiu o placeholder skies)
+            // (v11) As chaves das antigas placeholders waves/skies ficam
+            // guardadas para uma futura reactivação, se pedida:
+            zenOptWaves:     'Ondas do Mar',
+            zenOptSkies:     'Céu Estrelado',
+            // (v10) Verificador de vídeos (menu "Leo" → Verificar Todos
+            // os Vídeos) — strings entregues ao zen-video.js via
+            // _zenSyncLang; {n}/{total} são substituídos no código
+            zenCheckTitle:       '\uD83D\uDCFA Verificação de Vídeos',
+            zenCheckLoading:     'A carregar a API do YouTube...',
+            zenCheckChecking:    'A verificar',
+            zenCheckCheckingBtn: 'A verificar...',
+            zenCheckAllOk:       'Todos os {n} vídeos estão online — está tudo bem.',
+            zenCheckProblems:    '{n} de {total} vídeos com problemas — relatório descarregado.',
+            zenCheckClose:       'Fechar',
+            zenCheckApiFail:     'Não foi possível carregar a API do YouTube — verifica a ligação.',
+            zenCheckNoVideos:    'Não há vídeos para verificar.',
+            zenCheckWarn:        'YouTube inacessível? Verifica a rede/adblock — todos os vídeos falharam.',
+            zenCheckNoResponse:  'Sem resposta em 15s',
+
             modPanelTooltip:    '\u26A1 Painel Mod',
             modTitleModeration: '\u26A1 Modera\u00E7\u00E3o',
             modBtnSnowHint:     '\u2744 For\u00E7ar Aviso Neve',
@@ -210,6 +278,8 @@
             modBtnForceSigs:    '\uD83D\uDCDC For\u00E7ar Assinaturas',
             modBtnResetSig:     '\uD83D\uDDD1 Redefinir Assinatura',
             modBtnResetDone:    '\u2705 Redefinido!',
+            modTitleVideos:     '\uD83D\uDCFA Fundo em Vídeo',
+            modBtnCheckVideos:  '\uD83D\uDD0D Verificar Todos os Vídeos',
 
             // ── Suika Game ──
             suikaSectionTitle:   'SUIKA',
@@ -417,11 +487,23 @@
 
         const btnMap = {
             eyeBtn: 'eyeBtnTitle', bgShuffleBtn: 'shuffleBtnTitle',
-            rainBtn: 'rainBtnTitle', dryerBtn: 'dryerBtnTitle', windBtn: 'windBtnTitle'
+            rainBtn: 'rainBtnTitle', dryerBtn: 'dryerBtnTitle', windBtn: 'windBtnTitle',
+            zenAudioBtn: 'zenAudioBtnTitle',
+            zenNightBtn: 'nightMode'   // lua do dock ambiente (modo vídeo)
+            // NOTA: o zenBtn NÃO está aqui — o seu title é DINÂMICO por
+            // estado ("A carregar"/"Parar"/nome da categoria/"Video de
+            // fundo"), comandado pelo zen-video.js (updateZenBtnTitle)
+            // com as strings recebidas via window._zenSyncLang (abaixo)
         };
         Object.keys(btnMap).forEach(function (id) {
             const el = document.getElementById(id);
             if (el) el.title = t[btnMap[id]];
+        });
+
+        // Zen video: opções do carrossel (zen-video.js) via data-i18n-key
+        document.querySelectorAll('[data-i18n-key]').forEach(function (el) {
+            const k = el.getAttribute('data-i18n-key');
+            if (k && t[k]) el.title = t[k];
         });
 
         const modTooltip = document.querySelector('.mod-tab-tooltip');
@@ -431,13 +513,15 @@
         if (modTitles[0]) modTitles[0].textContent = t.modTitleModeration;
         if (modTitles[1]) modTitles[1].textContent = t.modTitleImages;
         if (modTitles[2]) modTitles[2].textContent = t.modTitleSignature;
+        if (modTitles[3]) modTitles[3].textContent = t.modTitleVideos;
 
         const modBtnMap = {
             modBtnForceSnowHint:   'modBtnSnowHint',
             modBtnForceSpringHint: 'modBtnSpringHint',
             modBtnForceAutumnHint: 'modBtnAutumnHint',
             modBtnForceSummerHint: 'modBtnSummerHint',
-            modBtnForceSigs:       'modBtnForceSigs'
+            modBtnForceSigs:       'modBtnForceSigs',
+            modBtnCheckVideos:     'modBtnCheckVideos'
         };
         Object.keys(modBtnMap).forEach(function (id) {
             const el = document.getElementById(id);
@@ -466,6 +550,11 @@
 
         // ── Suika Game ──
         if (window._suikaSyncLang) window._suikaSyncLang(t);
+
+        // ── Zen video: labels DINÂMICAS do botão zen ("A carregar"/
+        // "Parar"/nome da categoria/"Video de fundo") — o zen-video.js
+        // guarda as strings e refaz o title conforme o estado actual ──
+        if (window._zenSyncLang) window._zenSyncLang(t);
 
         const gamesTitleEl = document.querySelector('.suika-banner-title');
         if (gamesTitleEl) gamesTitleEl.textContent = t.gamesTitle;

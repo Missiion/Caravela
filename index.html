@@ -62,6 +62,7 @@
     </script>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="game-launcher.css">
+    <link rel="stylesheet" href="zen-video.css">
 </head>
 <body>
 
@@ -77,6 +78,16 @@
     <canvas id="autumn-canvas" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:9996;pointer-events:none;display:none;"></canvas>
     <canvas id="summer-canvas" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:97;pointer-events:none;display:none;"></canvas>
     <canvas id="snow-canvas"   style="position:fixed;bottom:0;left:0;width:100%;height:100%;z-index:9999;pointer-events:none;display:none;"></canvas>
+
+    <!-- ── ZEN VIDEO BACKGROUND LAYER ──
+         Camada de vídeo de fundo (YouTube, sem UI). Fica ACIMA das camadas
+         de imagem (bg-light/dark, z:-2) e ABAIXO da chuva/noite (z:-1).
+         As imagens de fundo ficam SEMPRE visíveis por baixo — o vídeo só
+         aparece com fade quando começa a tocar (nunca fica preto). -->
+    <div id="bgVideoLayer" aria-hidden="true">
+        <div class="vid-cover" id="vidCoverA"></div>
+        <div class="vid-cover" id="vidCoverB"></div>
+    </div>
 
     <!-- ── AUDIO ── -->
     <audio id="rainAudio"  src="https://cdn.jsdelivr.net/gh/Missiion/Caravela@main/Som_chuva_loop.mp3"  loop preload="auto" crossorigin="anonymous"></audio>
@@ -233,6 +244,21 @@
                 </button>
             </div>
 
+            <!-- ── WIND ──
+                 Ícone SVG DESENHADO PARA O PROJECTO (3 rajadas de vento,
+                 traço bold 2.2 com pontas arredondadas — mesmo peso óptico
+                 dos PNGs da chuva/secador; o antigo Icon_vento.png era
+                 hairline e ficava fraco ao lado deles). Herda a classe
+                 .rain-icon-img: dimensionamento 100%/24px no dock,
+                 drop-shadow e o glow .sound-on (idêntico aos outros).
+                 v9 — TAMANHO NORMAL + SEM CORTES: a versão anterior
+                 preenchia 102%×90% do viewBox e a ponta direita da
+                 rajada do MEIO era SEMPRE cortada (a espiral da
+                 rajada passava do limite do viewBox). Redesenho com a rajada
+                 do meio (a maior) MAIS CURTA e o conjunto a ocupar
+                 ~74%×70% do viewBox — a mesma "pegada" visual da chuva
+                 (92%×53%) e do secador (78%×89%), com margem de ~3
+                 unidades em todos os lados → nunca mais corta. -->
             <div class="snd-btn-wrap" id="sndWrapWind" style="right:calc(20px + var(--tamanho-nuvem) * 2 + 16px)">
                 <div class="snd-vol-popup">
                     <div class="snd-vol-slider-wrap">
@@ -241,8 +267,57 @@
                     <span class="snd-vol-lbl">VOL</span>
                 </div>
                 <button class="rain-toggle" id="windBtn" title="Toggle Wind">
-                    <img src="https://raw.githubusercontent.com/Missiion/Caravela/refs/heads/main/Icon_vento.png"
-                         alt="Wind" class="rain-icon-img" id="windIcon" style="width:105%;height:105%;margin:-2.5%;">
+                    <svg class="rain-icon-img" id="windIcon" viewBox="0 0 24 24" fill="none"
+                         stroke="white" stroke-width="2.2" stroke-linecap="round"
+                         stroke-linejoin="round" aria-hidden="true">
+                        <!-- rajada do MEIO (dominante, MAIS CURTA): linha + grande
+                             espiral por cima — termina a ~3 unidades do limite
+                             direito (nunca mais corta) -->
+                        <path d="M14.5 7.2a2.9 2.9 0 1 1 2.4 4.6H4.2"/>
+                        <!-- rajada de CIMA (curta): espiral pequena por cima -->
+                        <path d="M9.3 5.4a1.9 1.9 0 1 1 1.6 3H4.2"/>
+                        <!-- rajada de BAIXO (média, indentada): espiral por baixo -->
+                        <path d="M11.6 18.5a1.9 1.9 0 1 0 1.2-3.1H6.2"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- ── ZEN VIDEO BUTTON (ambiente em vídeo) ──
+                 Extrema esquerda dos botões de som (à esquerda do Vento).
+                 Hover → carrossel minimalista SEM background com apenas
+                 2 ícones: o SELECCIONADO (o próprio botão, com zoom) e o
+                 SUPERIOR (próxima opção). Scroll/click → selecciona
+                 (aplicação em tempo real). ÍCONE DEFAULT (v10): SVG
+                 minimalista play + arco orbital (~1/3 da circunferência),
+                 na linguagem dos ícones de som ambiente — substituiu o
+                 PNG oficial Icone_Videos.png (que permanece no disco
+                 como backup). O botão mostra sempre o ícone da opção
+                 SELECCIONADA. A LABEL (tooltip) é DINÂMICA por estado —
+                 "A carregar" durante a espera, "Parar" com a pausa
+                 armada, nome da categoria quando uma está seleccionada,
+                 "Video de fundo" no default (zen-video.js:
+                 updateZenBtnTitle + i18n _zenSyncLang). -->
+            <div class="snd-btn-wrap zen-btn-wrap" id="sndWrapZen" style="right:calc(20px + var(--tamanho-nuvem) * 3 + 24px)">
+                <div class="zen-carousel" id="zenCarousel">
+                    <div class="zen-carousel-track" id="zenCarouselTrack"></div>
+                </div>
+                <button class="rain-toggle zen-toggle" id="zenBtn" title="Video Background" aria-label="Video Background">
+                    <!-- v10 — novo ícone default: play sólido no centro +
+                         arco orbital de ~120° (33% da circunferência), do
+                         topo no sentido dos ponteiros até às 4h. SVG na
+                         mesma linguagem dos ícones de som ambiente
+                         (substitui o PNG oficial Icone_Videos.png, que
+                         fica em public/hub/ como backup histórico). O
+                         zen-video.js reescreve isto conforme a opção
+                         seleccionada (setBtnIcon). -->
+                    <svg class="zen-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <g class="zen-play-group">
+                            <path d="M12 2.5a9.5 9.5 0 0 1 8.23 14.25"/>
+                            <path d="M9.7 7.5l7.2 4.5-7.2 4.5z" fill="currentColor"
+                                  stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                        </g>
+                    </svg>
                 </button>
             </div>
 
@@ -368,6 +443,61 @@
         </svg>
     </button>
 
+    <!-- ── ZEN VIDEO SOUND (aba de UI buttons, abaixo do bgShuffleBtn) ──
+         Só aparece quando o modo vídeo está activo (após o carrossel fechar
+         com uma opção seleccionada). O som toca desde a 1.ª reprodução —
+         LIGADO por defeito, com fade-in suave (nunca assusta); volume 20%.
+         Clique → liga/desliga + popup de volume horizontal à direita. -->
+    <div class="zen-audio-wrap" id="zenAudioWrap">
+        <button class="zen-audio-btn" id="zenAudioBtn" title="Video Sound" aria-label="Video Sound">
+            <svg class="zen-audio-icon zen-audio-icon-off" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <line x1="23" y1="9" x2="17" y2="15"/>
+                <line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+            <svg class="zen-audio-icon zen-audio-icon-on" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+        </button>
+        <div class="zen-audio-vol" id="zenAudioVol">
+            <input type="range" id="zenAudioVolSlider" min="0" max="100" value="20">
+            <span class="snd-vol-lbl">VOL</span>
+        </div>
+    </div>
+
+    <!-- ── ZEN AMBIENT DOCK (modo vídeo) ──
+         Contentor fixo (canto superior esquerdo) para os botões de som
+         ambiente (chuva/secador/vento) SÓ enquanto o Main Hub está
+         escondido. Os ORIGINAIS ficam SEMPRE na UI principal (desvanecem
+         naturalmente com o hub); o zen-video.js cria CLONES para aqui no
+         1.º modo vídeo (clique/volume reencaminhados para os originais —
+         estado sempre sincronizado) e o dock mostra/esconde pelas classes
+         do body (olho mostra → dock esvazia visualmente). Fica abaixo do
+         botão de som do vídeo; os popups de volume passam a HORIZONTAIS
+         (ver #zenAmbientDock em zen-video.css).
+         O botão NIGHT MODE (lua monocromática, mesmo estilo dos ícones da
+         aba de UI buttons) é NATIVO do dock: existe sempre aqui (só é
+         visível em modo vídeo com o hub escondido — mesmas regras dos
+         outros botões) e fica directamente ABAIXO DO VENTO. O clique é
+         reencaminhado para o moonBtn original (mesma função, mesmo
+         estado). Nunca remover do HTML.
+         ⚠ O botão vive dentro de um WRAPPER (.zen-night-wrap): a
+         animação de entrada do dock (zenDockIn) aplica-se ao WRAPPER,
+         nunca ao botão — o fill-mode fixaria opacity:1 para sempre e
+         mataria o estado "desligada" ténue (bug "lua sempre carregada").
+         O botão guarda os DOIS ESTADOS: ténue (off) e glow (on). -->
+    <div id="zenAmbientDock" aria-hidden="true">
+        <div class="zen-night-wrap" id="zenNightWrap">
+            <button class="zen-night-btn" id="zenNightBtn" title="Night Mode" aria-label="Night Mode">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
     <!-- ── SEASON HINTS ── -->
     <div class="snow-hint"   id="snowHint">Type "snow" &#10052;</div>
     <div class="spring-hint" id="springHint">Type "spring" &#9728;</div>
@@ -408,8 +538,31 @@
             <div class="mod-tab-title" style="margin-top:6px">&#9997; Signature</div>
             <button class="mod-btn" id="modBtnForceSigs">&#128220; Force Show Signatures</button>
             <button class="mod-btn" id="modBtnResetSig">&#128465; Reset Signature State</button>
+            <div class="mod-tab-title" style="margin-top:6px">&#128250; Video Background</div>
+            <!-- v10 — verificação de conectividade de TODOS os vídeos de
+                 TODAS as categorias (dinâmico: vídeos/categorias futuros
+                 entram sozinhos). Falhas → relatório .txt organizado
+                 descarregado automaticamente; tudo online → mensagem
+                 simples (lógica no zen-video.js; painel #zenCheckOverlay) -->
+            <button class="mod-btn" id="modBtnCheckVideos">&#128269; Verify All Videos</button>
             <div class="mod-tab-title" style="margin-top:6px">&#9881; Config Panel</div>
             <button class="mod-btn" id="modBtnCfgPanel">&#128396; Toggle Layout Editor</button>
+        </div>
+    </div>
+
+    <!-- ── ZEN VIDEO CHECK OVERLAY (admin — "Verify All Videos") ──
+         Painel da verificação de conectividade dos vídeos (menu "Leo" →
+         Mod Tab → Verify All Videos). Mostra o progresso em tempo real
+         e, no fim: mensagem simples (tudo online) ou a lista dos vídeos
+         com problemas + o relatório .txt já descarregado. Estilo no
+         zen-video.css (secção 7); lógica no zen-video.js. -->
+    <div id="zenCheckOverlay" aria-hidden="true">
+        <div class="zen-check-box" role="dialog" aria-label="Video Check">
+            <div class="zen-check-title">&#128250; Video Check</div>
+            <div class="zen-check-bar"><div class="zen-check-bar-fill" id="zenCheckBarFill"></div></div>
+            <div class="zen-check-status" id="zenCheckStatus">—</div>
+            <div class="zen-check-list" id="zenCheckList"></div>
+            <button class="zen-check-close" id="zenCheckClose">Close</button>
         </div>
     </div>
 
@@ -603,6 +756,9 @@
     <script src="suika.js"></script>
 
     <script src="signatures.js"></script>
+
+    <!-- ZEN VIDEO BACKGROUND (carrossel + vídeos de fundo do YouTube) -->
+    <script src="zen-video.js"></script>
 
     <!-- i18n DEVE SER O ÚLTIMO SCRIPT / i18n MUST BE THE LAST SCRIPT -->
     <script src="i18n.js"></script>

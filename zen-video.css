@@ -1,0 +1,945 @@
+/* ═══════════════════════════════════════════════════════════════════
+   ZEN VIDEO BACKGROUND SYSTEM — Caravela HUB
+   ─────────────────────────────────────────────────────────────────
+   1. Camada de vídeo de fundo (#bgVideoLayer + .vid-cover)
+   2. Botão principal zen (zona Sound Buttons, à esquerda do Vento)
+      — ícone default SVG (v10): play + arco orbital (ver §4)
+   3. Carrossel minimalista (hover no botão, SEM background, apenas
+      2 ícones: o SELECCIONADO no centro (o botão) e o SUPERIOR)
+   4. Ícones SVG das opções (roda · PSP · hazmat · buraco negro ·
+      fogueira — cada uma com a SUA animação de espera no carrossel;
+      TODAS param com WIND-DOWN: revertem suave até à pose inicial
+      em vez de cortarem a meio — v11, ver §4b)
+   5. Botão de som do vídeo + volume horizontal
+      (som default LIGADO, com fade-in suave — lógica no zen-video.js)
+   6. MODO VÍDEO (body.zen-video-mode — após o carrossel fechar):
+      • Main Hub container desvanecer (fade + escala 0.97 + blur 3px,
+        ~1.15s — SUBTIL e cinematográfico: o blur é apenas um sopro
+        de defocus, o peso fica no fade; nunca preto)
+      • #zenAmbientDock — botões de som ambiente (chuva/secador/
+        vento) na coluna esquerda, abaixo do som do vídeo, com popups
+        de volume HORIZONTAIS — SÓ enquanto o hub está escondido (o
+        olho devolve-os à UI principal; MutationObserver no JS)
+      • Olho → mostra/esconde apenas o Main Hub (mesma animação)
+      • Troca de fundo → troca o vídeo (freeze no frame actual)
+
+   Convenções do projecto (ver referencia-projecto.txt):
+   • Cores via variáveis de tema (--cor-borda-principal, --cor-sombra)
+   • z-index -2 = banda dos fundos; 300 = widgets fixos
+   • ⚠ .hub-container recebe style.transform do parallax (main.js)
+     em cada mousemove → o fade do modo vídeo usa SÓ opacity
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════
+   1. CAMADA DE VÍDEO DE FUNDO
+   ═══════════════════════════════════════════════════════════════════ */
+#bgVideoLayer {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: -2;                 /* mesma banda das imagens de fundo   */
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 1.2s ease-in-out;   /* igual ao crossfade das imgs */
+    pointer-events: none;        /* sem qualquer interacção → sem UI YT */
+    background: transparent;
+}
+#bgVideoLayer.on {
+    opacity: 1;
+}
+/* Dois slots A/B para crossfade entre vídeos (padrão bg-light-A/B).
+   O tamanho exacto (cover 16:9) é calculado pelo zen-video.js. */
+#bgVideoLayer .vid-cover {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.9s ease-in-out;
+    pointer-events: none;
+}
+#bgVideoLayer .vid-cover.visible {
+    opacity: 1;
+}
+#bgVideoLayer .vid-cover iframe {
+    width: 100%; height: 100%;
+    border: 0;
+    display: block;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   2. BOTÃO PRINCIPAL ZEN (usa .snd-btn-wrap + .rain-toggle do projecto)
+   ═══════════════════════════════════════════════════════════════════ */
+.zen-toggle {
+    color: #fff;
+}
+/* (v10) O ícone default do botão passou a SVG (play + arco orbital —
+   ICONS.default no zen-video.js), na família visual dos restantes
+   ícones; o antigo PNG oficial (Icone_Videos.png) foi substituído a
+   pedido e já não é referenciado (a regra .zen-btn-img fica como
+   legado, para qualquer uso futuro de imagem).
+   O fade do ícone (0.24s) é IGUAL ao fade do item CENTRO do carrossel
+   (ver §3) → a troca botão↔centro é um crossfade perfeito, sem salto. */
+.zen-toggle .zen-btn-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 0 2px rgba(0,0,0,0.5));
+    transition: filter 0.3s ease, opacity 0.24s ease;
+}
+/* Ícones SVG das opções (driving etc.) */
+.zen-toggle .zen-btn-icon {
+    width: 92%;
+    height: 92%;
+    display: block;
+    filter: drop-shadow(0 0 2px rgba(0,0,0,0.5));
+    transition: filter 0.3s ease, opacity 0.24s ease;
+}
+/* Estado activo: glow azul (idêntico ao .sound-on dos botões de som)
+   + "respiração" zen lenta — aplica-se ao SVG e ao PNG */
+.zen-toggle.sound-on {
+    opacity: 1;
+}
+.zen-toggle.sound-on .zen-btn-icon,
+.zen-toggle.sound-on .zen-btn-img {
+    animation: zenBreath 3.6s ease-in-out infinite;
+}
+@keyframes zenBreath {
+    0%, 100% {
+        filter: drop-shadow(0 0 4px rgba(120,200,255,0.55))
+                drop-shadow(0 0 9px rgba(80,160,255,0.35));
+    }
+    50% {
+        filter: drop-shadow(0 0 7px rgba(120,200,255,0.95))
+                drop-shadow(0 0 14px rgba(80,160,255,0.6));
+    }
+}
+/* Carrossel aberto → o ícone do BOTÃO desvanece (o item CENTRO do
+   carrossel passa a ser a exibição, com zoom) */
+#zenBtn.icon-hidden > * {
+    opacity: 0;
+}
+/* Espera do vídeo (roda a girar): o clique no botão é IGNORADO (ver
+   zen-video.js — o utilizador não cancela o carregamento sem querer) →
+   o cursor deixa de prometer uma acção que não existe */
+.zen-toggle.zen-busy {
+    cursor: default;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   3. CARROSSEL MINIMALISTA (hover no botão zen)
+   ─────────────────────────────────────────────────────────────────
+   SEM background, SEM borda, SEM sombra — apenas 2 ÍCONES visíveis:
+   o SELECCIONADO (centro = o próprio botão, com zoom) e o SUPERIOR
+   (próxima opção, 40px acima):
+     • slot CENTRO  = o botão (item .center invisível por baixo do
+       zoom; o ícone real é exibido pelo item centro do carrossel)
+     • slot ACIMA   = próxima opção (scroll ↓ puxa tudo para baixo
+       e esta fica seleccionada no centro; a que sai pelo fundo
+       simplesmente desvanece)
+   O contentor é pointer-events:none (nunca bloqueia o botão); só o
+   item superior (.near) é clicável. O fecho tem período de graça no
+   JS (CLOSE_DELAY = 320ms — o dobro do anterior, a pedido).
+
+   ZOOM SMOOTH (sem "pop-in"): os ícones têm base 32px — o MAIOR
+   tamanho a que algum é exibido — e TODAS as escalas são ≤1 → a
+   rasterização é sempre nítida (nunca há upscale GPU = nunca há
+   perda de qualidade). O CENTRO fechado parte EXACTAMENTE do tamanho
+   do ícone do BOTÃO (v10: TODAS as opções são SVG a 92%·30px → 0.86;
+   var --csc por item, definida no JS) → a troca com o ícone do botão
+   é um crossfade sem salto; a abertura é um ZOOM-IN suave (0.86→1.0)
+   e o fecho o ZOOM-OUT inverso. Em hover, o item superior leva um
+   LEVE ZOOM (0.62→0.72) para sobressair.
+   ═══════════════════════════════════════════════════════════════════ */
+.zen-carousel {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 80px;                /* 2 slots de 40px (superior + centro) */
+    z-index: 25;                 /* acima do botão (.rain-toggle tem z-index:20
+                                    — o item CENTRO substitui visualmente o
+                                    ícone do botão enquanto o carrossel está
+                                    aberto) */
+    pointer-events: none;        /* só os itens .near recebem cliques   */
+}
+.zen-carousel-track {
+    position: absolute;
+    inset: 0;
+}
+
+/* Cada opção — slot vertical posicionado por --s (JS):
+   --s = -1 → acima (única visível) · 0 → centro (botão) · resto fora.
+   Estado FECHADO = ponto de partida da animação: colapsado para o
+   centro, invisível (o CENTRO parte do tamanho do ícone do botão —
+   var --csc, ver nota de topo da secção). */
+.zen-opt {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 40px;
+    height: 40px;
+    margin-top: -20px;           /* centra o slot no centro do carrossel */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: #fff;
+    transform: translateX(-50%) translateY(calc(var(--s, 0) * 18px)) scale(0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.32s cubic-bezier(0.25, 0.8, 0.25, 1),
+                opacity 0.24s ease;
+}
+/* O CENTRO fechado parte do TAMANHO EXACTO do ícone do botão:
+   v10 — todas as opções são SVG (27,6px/32px = 0.86, igual em todas;
+   var definida no construtor das opções, no JS) → crossfade sem
+   qualquer salto */
+.zen-opt.center {
+    transform: translateX(-50%) translateY(0) scale(var(--csc, 0.9));
+}
+/* Base 32px = o maior tamanho exibido (centro aberto). Todas as
+   escalas são ≤1 → rasterização SEMPRE nítida (zero upscale GPU,
+   zero perda de qualidade) — e o tamanho maior melhora a própria
+   renderização (anti-alias do SVG/PNG à escala final). */
+.zen-opt svg,
+.zen-opt img {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    display: block;
+    /* efeito subtil de destaque — sem qualquer painel de fundo */
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.85));
+    transition: filter 0.2s ease;
+}
+
+/* ── ESTADO ABERTO (zoom-in: tudo cresce em direcção ao centro) ── */
+/* Única opção visível além do centro: o SUPERIOR (-1), clicável */
+.zen-carousel.open .zen-opt.near {
+    transform: translateX(-50%) translateY(calc(var(--s, 0) * 40px)) scale(0.62);
+    opacity: 0.92;
+    pointer-events: auto;
+}
+/* Centro = o botão: a base 32px escala 1:1 (rasterização nítida) —
+   LEVEMENTE maior que o ícone do botão (zoom subtil que o destaca) */
+.zen-carousel.open .zen-opt.center {
+    transform: translateX(-50%) translateY(0) scale(1);
+    opacity: 1;
+}
+/* Tudo o que não é o centro nem o superior: fora da janela */
+.zen-carousel.open .zen-opt.far {
+    transform: translateX(-50%) translateY(calc(var(--s, 0) * 40px)) scale(0.5);
+    opacity: 0;
+}
+
+/* Hover no item superior → highlight + LEVE ZOOM (sobressai,
+   crescendo em direcção ao centro — a mesma linguagem do carrossel) */
+.zen-carousel.open .zen-opt.near:hover {
+    transform: translateX(-50%) translateY(calc(var(--s, 0) * 40px)) scale(0.72);
+    opacity: 1;
+}
+.zen-carousel.open .zen-opt.near:hover svg,
+.zen-carousel.open .zen-opt.near:hover img {
+    filter: drop-shadow(0 0 6px rgba(255,255,255,0.9));
+}
+/* Centro activo (vídeo em reprodução): respiração zen */
+.zen-carousel.open .zen-opt.center.playing svg,
+.zen-carousel.open .zen-opt.center.playing img {
+    animation: zenBreath 3.6s ease-in-out infinite;
+}
+/* Opção em reprodução (indicador discreto fora do centro) */
+.zen-opt.playing::after {
+    content: '';
+    position: absolute;
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: var(--cor-sombra);
+    bottom: 3px;
+    left: 50%;
+    transform: translateX(-50%);
+    box-shadow: 0 0 4px var(--cor-sombra);
+}
+/* ⚠ FIX do "ponto vermelho": o ponto do item em reprodução tem de
+   estar SEMPRE escondido no CENTRO — não apenas com o carrossel
+   ABERTO. Antes, a regra só vigorava em .open → ao FECHAR, o display
+   passava de none para block SEM transição e o ponto vermelho piscava
+   durante o fade-out do item (visível por uns momentos na zona
+   inferior do carrossel, após seleccionar uma categoria). */
+.zen-opt.center.playing::after { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   4. ÍCONES DAS OPÇÕES
+   ═══════════════════════════════════════════════════════════════════ */
+/* Roda do carro (ÚNICA — sem fumo) — INDICADOR DE CARGA: gira desde a
+   SELECÇÃO da opção até o vídeo REVELAR (a espera do pré-roll é sempre
+   ≥3,5s, o tempo de espera do vídeo). Duas fases na MESMA animação:
+   1) burst de 0,9s com easing (feedback imediato da selecção — o
+      "kick" original, inalterado);
+   2) a partir dos 0,9s, loop contínuo CALMO (1,8s por 1080° ≈ 1,7
+      voltas/s) que se repete até a classe ser removida.
+   Como 1080° são SEMPRE 3 voltas exatas, o fim do burst e o fim de cada
+   ciclo do loop coincidem com a POSE INICIAL da roda — o arranque do
+   loop e a paragem são visualmente limpos (sem saltos de ângulo).
+   O zen-video.js remove a classe (.spinning → stopWheel) no instante
+   exacto da REVELAÇÃO do vídeo (becomeActive) e na desactivação. */
+.zen-wheel-group {
+    transform-box: fill-box;
+    transform-origin: center;
+}
+.zen-wheel-group.spinning {
+    animation: zenWheelSpin 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 1,
+               zenWheelSpin 1.8s linear infinite 0.9s;
+}
+@keyframes zenWheelSpin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(1080deg); }
+}
+
+/* ── PSP do JOGOS — indicador de carga "clicada de lado" ──
+   A consola é pressionada com o polegar, primeiro à ESQUERDA (inclina-
+   se para esse lado, com força) e depois DUAS VEZES à DIREITA, volta ao
+   estado normal, e repete — o ciclo É a espera do vídeo (pré-roll
+   ≥3,5s; a classe .spinning é removida pelo stopWheel exactamente na
+   revelação, e a pose final de cada ciclo coincide com a neutra).
+   Pressionar a esquerda = rotate NEGATIVO (esse lado desce); pressionar
+   a direita = rotate POSITIVO.
+   v10 — MAIS AGRESSIVA (a pedido do Quintas: «a animações de loading
+   ficou demasiado subtil, deixa as animações um pouco mais agressivas
+   de maneira a serem mais percetíveis»). O 1.º rascunho v10 (±6°→±10°)
+   continuava subtil porque os easings out-expo faziam o pico durar
+   ~0,1s (o ângulo voltava a 0° quase de imediato — invisível em
+   amostragem e fraco ao olho). REDESENHO com a inclinação a MANTER-SE:
+   pressão seca (snap in) → HOLD em ±10° (a PSP fica inclinada janelas
+   reais de tempo) → soltura em out suave (não-expo). O tempo com
+   inclinação percetível sobe de ~8% para ~35% do ciclo — e ±10°
+   mantém a PSP dentro do viewBox (half-width efectiva ≈ 10,7 < 12). */
+.zen-psp-group {
+    transform-box: fill-box;
+    transform-origin: center;
+}
+.zen-psp-group.spinning {
+    animation: zenPspTap 2.6s infinite;
+}
+@keyframes zenPspTap {
+    /* repouso inicial curtíssimo → o 1.º clique responde quase ao
+       instante (feedback imediato da selecção, como o burst da roda) */
+    0% {
+        transform: rotate(0deg);
+        animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0.3);
+    }
+    /* 1 clique à ESQUERDA — pressão forte: a PSP inclina-se e FICA */
+    4%   { transform: rotate(-10deg); animation-timing-function: linear; }
+    10%  { transform: rotate(-10deg); animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+    22%  { transform: rotate(0deg);   animation-timing-function: linear; }
+    28%  { transform: rotate(0deg);   animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0.3); }
+    /* 1.º clique à DIREITA — inclina e fica */
+    32%  { transform: rotate(10deg);  animation-timing-function: linear; }
+    38%  { transform: rotate(10deg);  animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+    50%  { transform: rotate(0deg);   animation-timing-function: linear; }
+    54%  { transform: rotate(0deg);   animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0.3); }
+    /* 2.º clique à DIREITA (double-tap — intervalo mais curto) */
+    58%  { transform: rotate(10deg);  animation-timing-function: linear; }
+    62%  { transform: rotate(10deg);  animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+    74%  { transform: rotate(0deg);   animation-timing-function: linear; }
+    /* volta ao estado normal (repouso final ~0,7s) e repete */
+    100% { transform: rotate(0deg); }
+}
+
+/* ── HAZMAT do HORROR — indicador de carga "treme e pisca" ──
+   A cabeça do fato hazmat TREME (o grupo inteiro oscila em X, com
+   amplitude a decair — um tremor nervoso) e os olhos arregalados
+   PISCAM por trás do visor. Coreografia EXACTA do pedido: TREME →
+   PISCA ×2 → TREME → PISCA ×1 → repouso → repete. São DUAS animações
+   com a MESMA duração (2,8s) ligadas pela MESMA classe .spinning no
+   MESMO instante → ficam sempre sincronizadas: o shake mexe o GRUPO
+   todo, o blink encolhe os OLHOS no próprio centro de cada um
+   (transform-box: fill-box em ambos). A classe é removida pelo
+   stopWheel exactamente na revelação do vídeo (como a roda/PSP). */
+.zen-hazmat-group {
+    transform-box: fill-box;
+    transform-origin: center;
+}
+.zen-hazmat-group.spinning {
+    animation: zenHazmatShake 2.8s linear infinite;
+}
+.zen-hazmat-group.spinning .zen-hazmat-eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: zenHazmatBlink 2.8s linear infinite;
+}
+@keyframes zenHazmatShake {
+    /* 1.º TREMOR (0-12,6%) — o 1.º impulso responde quase ao instante
+       (feedback da selecção, como o burst da roda / 1.º clique da PSP) */
+    0%    { transform: translateX(0); }
+    1.5%  { transform: translateX(-1.8px); }
+    3%    { transform: translateX(1.8px); }
+    4.5%  { transform: translateX(-1.6px); }
+    6%    { transform: translateX(1.6px); }
+    7.5%  { transform: translateX(-1.2px); }
+    9%    { transform: translateX(1.2px); }
+    10.5% { transform: translateX(-0.8px); }
+    12%   { transform: translateX(0.8px); }
+    12.6% { transform: translateX(0); }
+    /* repouso entre actos (os piscares ×2 acontecem aqui — ver
+       zenHazmatBlink: 15,5%→21,2%) */
+    42%   { transform: translateX(0); }
+    /* 2.º TREMOR (42-54%) */
+    43.5% { transform: translateX(1.8px); }
+    45%   { transform: translateX(-1.8px); }
+    46.5% { transform: translateX(1.6px); }
+    48%   { transform: translateX(-1.6px); }
+    49.5% { transform: translateX(1.2px); }
+    51%   { transform: translateX(-1.2px); }
+    52.5% { transform: translateX(0.8px); }
+    53.5% { transform: translateX(-0.8px); }
+    54%   { transform: translateX(0); }
+    /* repouso final (o piscar ×1 acontece em 58%→60,8%) e repete */
+    100%  { transform: translateX(0); }
+}
+@keyframes zenHazmatBlink {
+    /* PISCA ×2: fecha (16,8%) → abre (18,4%) → fecha (19,6%) → abre
+       (21,2%) — piscadelas rápidas (~40ms cada fase) */
+    0%, 15.5%, 18.4%, 21.2%, 58%, 60.8%, 100% { transform: scaleY(1); }
+    /* PISCA ×1: fecha (59,2%) → abre (60,8%) */
+    16.8%, 19.6%, 59.2% { transform: scaleY(0.06); }
+}
+
+/* ── BURACO NEGRO do ESPAÇO — indicador de carga "flutua e roda" ──
+   O conjunto FLUTUA (sobe/desce suave, ±1,6px — flutuação básica) e
+   o ANEL DE ACREÇÃO RODA continuamente em torno do centro: a elipse
+   inclinada varre o círculo (o efeito de um disco a girar visto de
+   lado; o horizonte de eventos — círculo sólido — tapa sempre o
+   centro, em qualquer ângulo). 6s por volta → percetível durante a
+   espera (≥3,5s ≈ 60% de uma volta). A classe é removida pelo
+   stopWheel exactamente na revelação do vídeo. */
+.zen-blackhole-group {
+    transform-box: fill-box;
+    transform-origin: center;
+}
+.zen-blackhole-group.spinning {
+    animation: zenBlackholeFloat 3.2s ease-in-out infinite;
+}
+.zen-blackhole-group.spinning .zen-blackhole-ring {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: zenBlackholeSpin 6s linear infinite;
+}
+@keyframes zenBlackholeFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-1.6px); }
+}
+@keyframes zenBlackholeSpin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* ── FOGUEIRA da LAREIRA — indicador de carga "as chamas mexem-se" ──
+   (v11 — pedido do Quintas: «O Ícone para esta categoria vai ser uma
+   campfire clássica, 3 troncos na base, e chamas em cima, a animação
+   de loading vai ser as chamas a mexerem-se».) Os TRONCOS ficam
+   PARADOS (a base é firme); as CHAMAS é que vivem — DUAS animações
+   compostas para um fogo orgânico:
+   • a chama EXTERIOR BAILA: inclina-se para cada lado a partir da
+     BASE (transform-origin 50% 100% — onde assenta nos troncos) e
+     estica/encolhe — ±8° de skew ≈ 1,6px de desvio na ponta a 30px
+     (≈12px na pré-visualização a 240px). A 1.ª versão (±6°/±5%)
+     movia ~5% dos píxeis mas o VLM lia os frames como "idênticos" —
+     reforçada para ±8°/±8% (lição da PSP v10: o gosto do Quintas
+     vai para animações CLARAMENTE percetíveis, não subtis);
+   • o NÚCLEO interior RESPIRA em contrafase (ciclo mais curto, 0,8s):
+     engorda/afina ±18%/15% — a dupla velocidade quebra a simetria e
+     dá vida real ao fogo (duas frequências ≠ nunca coincidem).
+   A classe é removida pelo stopWheel exactamente na revelação do
+   vídeo — e (v11) chamas e núcleo REVERTEM suave até à pose inicial
+   (wind-down: a pose actual é capturada e reanimada até 'none' — ver
+   zen-video.js), em vez do corte a meio do ciclo. */
+.zen-fire-group.spinning .zen-fire-flames {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;   /* a BASE das chamas — o pivô do bailar */
+    animation: zenFireFlicker 1.6s ease-in-out infinite;
+}
+.zen-fire-group.spinning .zen-fire-core {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: zenFirePulse 0.8s ease-in-out infinite;
+}
+@keyframes zenFireFlicker {
+    /* a chama exterior ondula: inclina → endireita/encolhe → inclina
+       para o outro lado → volta — um bailar contínuo (nunca pára) */
+    0%, 100% { transform: skewX(0deg) scaleY(1); }
+    25%      { transform: skewX(8deg) scaleY(1.08); }
+    50%      { transform: skewX(0deg) scaleY(0.92); }
+    75%      { transform: skewX(-8deg) scaleY(1.08); }
+}
+@keyframes zenFirePulse {
+    /* o núcleo respira em contrafase (ciclo metade): engorda quando
+       a chama encolhe e vice-versa — o fogo nunca repete o mesmo frame */
+    0%, 100% { transform: scale(1, 1); }
+    50%      { transform: scale(1.18, 0.85); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   5. BOTÃO DE SOM DO VÍDEO + VOLUME HORIZONTAL
+   (espelho do padrão .eye-btn / .bg-shuffle-btn / .snd-vol-popup)
+   ═══════════════════════════════════════════════════════════════════ */
+.zen-audio-wrap {
+    position: fixed;
+    top: 106px;              /* abaixo do bgShuffleBtn (top:74px) */
+    left: 12px;
+    z-index: 300;            /* banda dos widgets fixos (eye/shuffle) */
+    opacity: 0;              /* só existe no modo vídeo (fade) */
+    pointer-events: none;
+    transition: opacity 0.35s ease;
+}
+.zen-audio-wrap.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+.zen-audio-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0.4;
+    transition: opacity 0.2s, filter 0.2s, transform 0.2s;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.zen-audio-btn:hover {
+    opacity: 0.75;
+    transform: scale(1.12);
+}
+.zen-audio-btn.sound-on {
+    opacity: 1;
+    filter: drop-shadow(0 0 5px rgba(255,255,255,0.8))
+            drop-shadow(0 0 10px rgba(200,220,255,0.5));
+}
+.zen-audio-btn .zen-audio-icon {
+    width: 24px;
+    height: 24px;
+}
+
+/* ── HINT DE SOM (Firefox) ──────────────────────────────────
+   Nos browsers STRICT_AUDIO (Firefox) o som do vídeo arranca MUDO e
+   liga-se apenas pelo botão. Enquanto o utilizador NUNCA tiver clicado
+   no botão de som/mute (marca persistente em localStorage — ver
+   zen-video.js), o ícone PULSA suavemente em VERMELHO sempre que está
+   visível: tinta vermelha + glow vermelho + "respiração" de opacidade,
+   tudo LEVE e SUBTIL (2,4s por ciclo — nunca gritado). O 1.º clique no
+   botão remove a classe e grava a marca → a pulsação nunca mais volta.
+   Em browsers Chromium a classe nunca é aplicada (zero impacto). */
+.zen-audio-btn.hint-pulse {
+    animation: zenSoundHintGlow 2.4s ease-in-out infinite;
+}
+@keyframes zenSoundHintGlow {
+    0%, 100% { opacity: 0.4; filter: none; }
+    50%      { opacity: 0.78; filter: drop-shadow(0 0 6px rgba(255, 70, 70, 0.5)); }
+}
+.zen-audio-btn.hint-pulse .zen-audio-icon {
+    animation: zenSoundHint 2.4s ease-in-out infinite;
+}
+@keyframes zenSoundHint {
+    0%, 100% { stroke: #fff; }
+    50%      { stroke: rgba(255, 96, 96, 0.95); }
+}
+
+/* Popup de volume — cópia horizontal do .snd-vol-popup */
+.zen-audio-vol {
+    position: absolute;
+    left: calc(100% + 4px);
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 7px;
+    background: rgba(5,5,12,0.92);
+    border: 1px solid var(--cor-borda-principal);
+    box-shadow: 3px 3px 0px var(--cor-sombra);
+    backdrop-filter: blur(8px);
+    padding: 8px 10px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease 0s;
+    white-space: nowrap;
+}
+/* Ponte de hover entre o botão e o popup */
+.zen-audio-vol::after {
+    content: '';
+    position: absolute;
+    right: 100%;
+    top: 0;
+    width: 12px;
+    height: 100%;
+}
+.zen-audio-wrap.sound-on:hover .zen-audio-vol {
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.15s ease 0s;
+}
+.zen-audio-wrap.sound-on .zen-audio-vol {
+    transition: opacity 0.15s ease 120ms;
+}
+/* Slider — cópia idêntica ao do snd-vol-popup, na horizontal */
+.zen-audio-vol input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 80px;
+    height: 4px;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+}
+.zen-audio-vol input[type=range]::-webkit-slider-runnable-track {
+    height: 3px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+}
+.zen-audio-vol input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--cor-sombra);
+    border: 2px solid rgba(255,255,255,0.55);
+    border-radius: 50%;
+    margin-top: -5.5px;
+    box-shadow: 0 0 7px var(--cor-sombra);
+    cursor: pointer;
+}
+.zen-audio-vol input[type=range]::-moz-range-track {
+    height: 3px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+}
+.zen-audio-vol input[type=range]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--cor-sombra);
+    border: 2px solid rgba(255,255,255,0.55);
+    border-radius: 50%;
+    box-shadow: 0 0 7px var(--cor-sombra);
+    cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   6. MODO VÍDEO (body.zen-video-mode)
+   Activado pelo zen-video.js quando o carrossel FECHA com um vídeo
+   em reprodução; desactivado quando o zen é desligado.
+   ═══════════════════════════════════════════════════════════════════ */
+/* 6a. Main Hub container desvanecer (SÓ ele — os restantes widgets
+   ficam). Fade + recolhimento quase imperceptível + defocus SUAVE
+   (~1.15s) — subtil, clean, cinematográfico: o peso visual fica no
+   fade (opacity); a escala e o blur são apenas um sopro (nunca
+   dominam), tanto no desaparecer (fecho do carrossel / olho) como
+   no reaparecer (olho / desactivar).
+   ⚠ Técnicas usadas (não mexer sem ler):
+   • SÓ opacity/scale/filter — o parallax escreve style.transform no
+     hub a cada mousemove (as transições do parallax são inline e
+     são limpas pelo zen-video.js ao trocar as classes zen-*).
+   • `scale`/`filter` são propriedades individuais (compõem-se ANTES
+     do transform do parallax) → sem conflito com o tilt.
+   • body.zen-hub-anim (classe transitória do JS, ~1.5s) mantém a
+     transição durante o RETORNO ao normal quando o modo desliga. */
+body.zen-video-mode .hub-container,
+body.zen-hub-anim .hub-container {
+    transition: opacity 1.15s cubic-bezier(0.4, 0, 0.2, 1),
+                scale 1.15s cubic-bezier(0.4, 0, 0.2, 1),
+                filter 1.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+body.zen-video-mode:not(.zen-hub-shown) .hub-container {
+    opacity: 0 !important;
+    scale: 0.97;
+    filter: blur(3px);
+    pointer-events: none;
+}
+
+/* 6b. Dock dos botões de som ambiente (coluna esquerda, abaixo do
+   botão de som do vídeo — top:106px → dock a 138px, pitch de 32px
+   igual à coluna eye/shuffle/zen-audio). SÓ é visível enquanto o
+   Main Hub está ESCONDIDO — os ORIGINAIS ficam sempre na UI principal
+   (desvanecem naturalmente com o hub) e o zen-video.js mantém CLONES
+   aqui (clique/volume reencaminhados — estado sempre sincronizado);
+   quando o olho mostra o hub (body.zen-hub-shown) o dock desvanece
+   (as clones ficam aqui, invisíveis). O botão NIGHT MODE é nativo do
+   dock (último da coluna, abaixo do vento) e segue as MESMAS regras. */
+#zenAmbientDock {
+    position: fixed;
+    top: 138px;
+    left: 12px;
+    z-index: 300;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    opacity: 0;
+    pointer-events: none;        /* só os botões dentro recebem cliques */
+    transition: opacity 0.4s ease;
+}
+body.zen-video-mode #zenAmbientDock {
+    opacity: 1;
+}
+body.zen-video-mode.zen-hub-shown #zenAmbientDock {
+    opacity: 0;                  /* hub visível → botões estão em casa */
+}
+/* Botões dentro do dock: 26px (igual ao eye/shuffle/zen-audio).
+   Entrada no dock com micro-animação clean (fade + deslize de 6px —
+   re-disparada pelo zen-video.js em cada transição para DOCK VISÍVEL,
+   porque as clones já cá vivem permanentemente). */
+#zenAmbientDock .snd-btn-wrap {
+    position: relative !important;   /* âncora do popup horizontal */
+    bottom: auto !important;         /* limpa o bottom:15px da classe  */
+    right: auto !important;          /* limpa o inline right:Xpx       */
+    pointer-events: auto;
+    margin-bottom: 6px;
+    animation: zenDockIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes zenDockIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* ── NIGHT MODE (lua monocromática, nativo do dock — abaixo do vento) ──
+   DOIS ESTADOS (mesmo tema dos outros ícones): desligada = ténue
+   (opacity 0.4, como os SVGs da coluna) · ligada = opacity 1 + glow
+   branco-azulado (idêntico ao .moon-btn.active — bastante visível).
+   Só é visível em modo vídeo com o hub escondido (regras de
+   visibilidade do dock — é filho do dock).
+   ⚠ A animação de entrada (zenDockIn) vive no WRAPPER (.zen-night-wrap),
+   NUNCA no botão: o fill-mode BOTH fixa opacity:1 para sempre (forwards)
+   e ANULARIA o estado apagado 0.4 — era o bug "lua sempre carregada"
+   (a opacity computada ficava 1 mesmo desligada). Padrão idêntico aos
+   clones ambiente: o WRAP anima a entrada; o BOTÃO interno guarda o
+   estado (0.4 ↔ 1 + glow). NUNCA REGREDIR. */
+#zenAmbientDock .zen-night-wrap {
+    position: relative;
+    margin-bottom: 6px;
+    animation: zenDockIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+#zenAmbientDock .zen-night-btn {
+    position: relative;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: #fff;
+    opacity: 0.4;               /* desligada: ténue, como os outros */
+    pointer-events: auto;
+    transition: opacity 0.2s ease, filter 0.2s ease, transform 0.2s ease;
+}
+#zenAmbientDock .zen-night-btn svg {
+    width: 24px;
+    height: 24px;
+    display: block;
+}
+#zenAmbientDock .zen-night-btn:hover {
+    opacity: 0.75;
+    transform: scale(1.12);
+}
+#zenAmbientDock .zen-night-btn.active {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(220,220,255,0.9))
+            drop-shadow(0 0 14px rgba(180,180,255,0.6));
+}
+#zenAmbientDock .rain-toggle {
+    width: 26px !important;
+    height: 26px !important;
+    z-index: auto;
+}
+#zenAmbientDock .rain-icon-img {
+    width: 24px !important;
+    height: 24px !important;
+    margin: 0 !important;
+}
+/* Popup de volume HORIZONTAL (cópia do padrão .zen-audio-vol) */
+#zenAmbientDock .snd-vol-popup {
+    bottom: auto;
+    top: 50%;
+    left: calc(100% + 4px);
+    transform: translateY(-50%);
+    flex-direction: row;
+    width: auto;
+    padding: 8px 10px;
+    gap: 7px;
+}
+/* Ponte de hover à ESQUERDA do popup (entre popup e botão) */
+#zenAmbientDock .snd-vol-popup::after {
+    top: 0;
+    left: auto;
+    right: 100%;
+    width: 12px;
+    height: 100%;
+}
+/* Slider horizontal (sem a rotação de -90º do original) */
+#zenAmbientDock .snd-vol-slider-wrap {
+    width: auto;
+    height: auto;
+}
+#zenAmbientDock .snd-vol-popup input[type=range] {
+    transform: none;
+    width: 80px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   INTEGRAÇÃO — regras de estado global do body
+   ═══════════════════════════════════════════════════════════════════ */
+/* Durante um jogo: som do vídeo + dock ambiente funcionais como o
+   eye/shuffle (padrão body.game-open do game-launcher.css) */
+body.game-open .zen-audio-wrap {
+    z-index: 5200 !important;
+    pointer-events: auto !important;
+}
+body.game-open #zenAmbientDock {
+    z-index: 5150 !important;
+    pointer-events: none !important;   /* o contentor nunca captura  */
+}
+body.game-open #zenAmbientDock .snd-btn-wrap {
+    pointer-events: auto !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   7. VERIFICAÇÃO DE VÍDEOS (overlay do admin — "Verify All Videos")
+   Painel do verificador de conectividade (menu "Leo" → Mod Tab →
+   Verify All Videos): barra de progresso em tempo real e, no fim,
+   mensagem simples (tudo online) ou a lista dos vídeos com problemas
+   + o relatório .txt já descarregado. Fica por cima de TUDO (jogos
+   incluídos) e o fecho é bloqueado enquanto a verificação corre.
+   Lógica no zen-video.js (runVideoCheck/runCheckPool).
+   ═══════════════════════════════════════════════════════════════════ */
+#zenCheckOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 6000;               /* acima de tudo, inclusive jogos */
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(6px);
+}
+#zenCheckOverlay.open { display: flex; }
+.zen-check-box {
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    background: rgba(8,8,16,0.97);
+    border: 1px solid var(--cor-borda-principal);
+    box-shadow: 4px 4px 0 var(--cor-sombra);
+    border-radius: 6px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.zen-check-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.62rem;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.85);
+}
+.zen-check-bar {
+    height: 4px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.zen-check-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--cor-sombra);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+.zen-check-status {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.92);
+    line-height: 1.45;
+    word-break: break-word;
+}
+/* Lista de resultados: altura MÁXIMA com scroll (nunca transborda o
+   ecrã, mesmo com dezenas de vídeos offline) + scrollbar discreta */
+.zen-check-list {
+    max-height: 42vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.25) transparent;
+}
+.zen-check-list::-webkit-scrollbar { width: 6px; }
+.zen-check-list::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.25);
+    border-radius: 3px;
+}
+.zen-check-list:empty { display: none; }
+.zen-check-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.05);
+    border-left: 3px solid var(--cor-sombra);
+    border-radius: 3px;
+}
+.zen-check-cat {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.55);
+}
+.zen-check-link {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.92);
+    word-break: break-all;
+}
+.zen-check-reason {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.68rem;
+    color: rgba(255,120,120,0.85);
+}
+.zen-check-warn {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    color: rgba(255,180,120,0.9);
+    padding: 8px 10px;
+    border: 1px dashed rgba(255,180,120,0.4);
+    border-radius: 4px;
+}
+.zen-check-close {
+    align-self: flex-end;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #fff;
+    background: none;
+    border: 1px solid var(--cor-borda-principal);
+    border-radius: 4px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: background 0.15s ease, opacity 0.15s ease;
+}
+.zen-check-close:hover { background: rgba(255,255,255,0.1); }
+/* Durante a verificação: o fecho é bloqueado (os resultados chegam ao
+   painel — nada se perde) e o botão comunica o estado */
+.zen-check-close.disabled {
+    opacity: 0.45;
+    cursor: default;
+    pointer-events: none;
+}

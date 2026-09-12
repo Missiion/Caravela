@@ -177,14 +177,25 @@ Promise.all([preloadImage(BG_LIGHT[_lightIdx]), preloadImage(BG_DARK[_darkIdx])]
 });
 
 document.getElementById('bgShuffleBtn').addEventListener('click', function() {
-    if (_blending) return;
-    const isNight = document.body.classList.contains('night-mode');
-    if (isNight) { pickNextDark();  applyBgDark(BG_DARK[_darkIdx]); }
-    else         { pickNextLight(); applyBgLight(BG_LIGHT[_lightIdx]); }
+    // Animação de rotação (feedback em ambos os modos)
     this.classList.remove('spinning');
     void this.offsetWidth;
     this.classList.add('spinning');
     setTimeout(() => this.classList.remove('spinning'), 500);
+
+    // ── MODO VÍDEO (zen): troca o VÍDEO em reprodução (o actual CONTINUA
+    // a tocar — nunca é pausado à vista — e o crossfade acontece quando
+    // o próximo está a tocar: zero UI de vídeo, zero flashes) ──
+    if (window._zenCtrl && window._zenCtrl.isActive && window._zenCtrl.isActive()) {
+        window._zenCtrl.next();
+        return;
+    }
+
+    // ── Modo normal: troca o fundo de imagem ──
+    if (_blending) return;
+    const isNight = document.body.classList.contains('night-mode');
+    if (isNight) { pickNextDark();  applyBgDark(BG_DARK[_darkIdx]); }
+    else         { pickNextLight(); applyBgLight(BG_LIGHT[_lightIdx]); }
 });
 
 // =========================================
@@ -726,22 +737,41 @@ playerStage.addEventListener('wheel', (e) => {
 
 // =========================================
 // PARALLAX 3D
+// ⚠ MODO VÍDEO (zen): o parallax fica suspenso SÓ enquanto o Main Hub
+// está ESCONDIDO (zen-video-mode SEM zen-hub-shown) — quando o olho o
+// revela (zen-hub-shown), o efeito 3D RETOMA imediatamente. Motivo da
+// suspensão: o parallax escreve style.transition INLINE no hub-container
+// ('none' no mouseenter / 'transform .5s' no mouseleave) — o que
+// ANULARIA as transições CSS de opacity/scale/filter do modo vídeo. O
+// zen-video.js limpa o inline transition sempre que as classes zen-*
+// mudam (observer) — incluindo no olho e no disengage — para o fade
+// animar sempre. Durante o retorno ao normal (zen-hub-anim, ~1.5s) os
+// handlers de enter/leave não escrevem o inline (não matar a animação);
+// o mousemove (SÓ transform, propriedade separada) continua activo.
 // =========================================
 (function() {
     const card = document.getElementById('parallax-box');
+    const suspended = () =>
+        document.body.classList.contains('zen-video-mode') &&
+        !document.body.classList.contains('zen-hub-shown');
     document.body.addEventListener('mousemove', (e) => {
         if (document.body.classList.contains('game-open')) return;
+        if (suspended()) return;
         const xAxis = (window.innerWidth  / 2 - e.pageX) / 150;
         const yAxis = (window.innerHeight / 2 - e.pageY) / 150;
         card.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
     });
     document.body.addEventListener('mouseleave', () => {
         if (document.body.classList.contains('game-open')) return;
+        if (suspended()) return;
+        if (document.body.classList.contains('zen-hub-anim')) return;
         card.style.transition = 'transform 0.5s ease';
         card.style.transform = 'rotateY(0deg) rotateX(0deg)';
     });
     document.body.addEventListener('mouseenter', () => {
         if (document.body.classList.contains('game-open')) return;
+        if (suspended()) return;
+        if (document.body.classList.contains('zen-hub-anim')) return;
         card.style.transition = 'none';
     });
 })();
@@ -887,18 +917,38 @@ playerStage.addEventListener('wheel', (e) => {
 
 // =========================================
 // EYE BUTTON (Hide/Show UI)
+// MODO VÍDEO (zen): esconde/mostra APENAS o Main Hub container
+// (body.zen-video-mode, gerido pelo zen-video.js). O clique consulta
+// o estado em tempo real — o zen-video.js pode activar/desactivar o
+// modo a qualquer momento.
 // =========================================
 (function() {
     const eyeBtn    = document.getElementById('eyeBtn');
     const eyeOpen   = document.getElementById('eyeOpen');
     const eyeClosed = document.getElementById('eyeClosed');
-    let hidden = false;
-    eyeBtn.addEventListener('click', () => {
-        hidden = !hidden;
-        document.body.classList.toggle('hidden-mode', hidden);
-        eyeBtn.classList.toggle('active', hidden);
+
+    // Helper partilhado com o zen-video.js (estado visual do olho)
+    window._setEyeIcons = function(hidden) {
+        if (!eyeOpen || !eyeClosed) return;
         eyeOpen.style.display   = hidden ? 'none'  : 'block';
         eyeClosed.style.display = hidden ? 'block' : 'none';
+    };
+
+    eyeBtn.addEventListener('click', () => {
+        // ── MODO VÍDEO: alterna apenas o Main Hub ──
+        if (window._zenCtrl && window._zenCtrl.isActive && window._zenCtrl.isActive()) {
+            const shown = document.body.classList.contains('zen-hub-shown');
+            document.body.classList.toggle('zen-hub-shown', !shown);
+            const hiddenNow = shown;   // estava visível → agora esconde
+            eyeBtn.classList.toggle('active', hiddenNow);
+            window._setEyeIcons(hiddenNow);
+            return;
+        }
+        // ── Modo normal: hidden-mode completo (widgets todos) ──
+        const hidden = !document.body.classList.contains('hidden-mode');
+        document.body.classList.toggle('hidden-mode', hidden);
+        eyeBtn.classList.toggle('active', hidden);
+        window._setEyeIcons(hidden);
     });
 })();
 

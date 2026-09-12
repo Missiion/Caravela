@@ -1639,7 +1639,8 @@ body.hidden-mode #langToggleBtn {
     position: absolute;
     bottom: var(--sig-bottom);
     left: calc(var(--char-tamanho) + var(--sig-left-offset));
-    right: calc(var(--tamanho-nuvem) * 3 + var(--sig-right-offset));
+    /* 4 botões de som (chuva, secador, vento + zen vídeo) reservam o lado direito */
+    right: calc(var(--tamanho-nuvem) * 4 + var(--sig-right-offset));
     display: flex;
     align-items: center;
     z-index: 15;
