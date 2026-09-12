@@ -65,6 +65,17 @@
     border: 0;
     display: block;
 }
+/* (v16) PLAYER NATIVO da reserva anti-anúncios (Piped): o <video> vive no
+   MESMO slot do iframe do YouTube (a troca é instantânea e invisível).
+   object-fit: contain = PARIDADE com o iframe do YT (letterbox em vez de
+   corte); o poster (thumbnail Piped) cobre o primeiro frame da troca. */
+#bgVideoLayer .vid-cover video {
+    width: 100%; height: 100%;
+    border: 0;
+    display: block;
+    object-fit: contain;
+    background: transparent;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    2. BOTÃO PRINCIPAL ZEN (usa .snd-btn-wrap + .rain-toggle do projecto)
@@ -911,6 +922,16 @@ body.game-open #zenAmbientDock .snd-btn-wrap {
     font-size: 0.68rem;
     color: rgba(255,120,120,0.85);
 }
+/* (v16) Marcador da reserva anti-anúncios no verificador: VERDE quando o
+   site ainda reproduz o vídeo sem anúncios via Piped, vermelho quando nem
+   a reserva o serve — o motivo fica sempre completo no relatório .txt. */
+.zen-check-fb {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.68rem;
+    line-height: 1.3;
+}
+.zen-check-fb.ok   { color: rgba(120,255,170,0.9); }
+.zen-check-fb.down { color: rgba(255,120,120,0.75); }
 .zen-check-warn {
     font-family: 'Inter', sans-serif;
     font-size: 0.7rem;

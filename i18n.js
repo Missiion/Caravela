@@ -106,6 +106,10 @@
             zenCheckNoVideos:    'No videos to check.',
             zenCheckWarn:        'YouTube unreachable? Check network/adblock — every video failed.',
             zenCheckNoResponse:  'No response within 15s',
+            // v16 — sonda da reserva anti-anúncios (Piped) no verificador
+            zenCheckFbProbing:   'Checking the ad-free fallback...',
+            zenCheckFbOk:        'Ad-free fallback: available',
+            zenCheckFbDown:      'Ad-free fallback: unavailable',
 
             modPanelTooltip:    '\u26A1 Mod Panel',
             modTitleModeration: '\u26A1 Moderation',
@@ -263,6 +267,10 @@
             zenCheckNoVideos:    'Não há vídeos para verificar.',
             zenCheckWarn:        'YouTube inacessível? Verifica a rede/adblock — todos os vídeos falharam.',
             zenCheckNoResponse:  'Sem resposta em 15s',
+            // v16 — sonda da reserva anti-anúncios (Piped) no verificador
+            zenCheckFbProbing:   'A verificar a reserva sem anúncios...',
+            zenCheckFbOk:        'Reserva sem anúncios: disponível',
+            zenCheckFbDown:      'Reserva sem anúncios: indisponível',
 
             modPanelTooltip:    '\u26A1 Painel Mod',
             modTitleModeration: '\u26A1 Modera\u00E7\u00E3o',

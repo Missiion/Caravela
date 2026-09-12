@@ -942,6 +942,15 @@ function loadVideoInto(slot, video, wantSound) {
     slotVideo[slot] = video;
     slotState[slot] = 'loading';
     clearRevealTimer(slot);
+    // v16 — ANTI-ANÚNCIOS: nova carga = novo orçamento de trocas YT↔nativo
+    // + pré-busca Piped em paralelo (ground truth da duração real + streams
+    // quentes para uma eventual troca instantânea) + vigilância reposta
+    // (a anterior vigiava o vídeo ANTERIOR deste slot)
+    resetLoadGuards(slot);
+    if (video && video.id && !(players[slot] && players[slot].__native)) {
+        pipedWarm(video.id);
+    }
+    stopAdWatch(slot);   // o PLAYING do NOVO vídeo volta a armá-la limpa
     const p = players[slot];
     if (p && p.loadVideoById && pReady[slot]) {
         // Reutiliza o iframe existente — troca instantânea, sem criar novo.
@@ -986,11 +995,15 @@ function armSlotTimer(slot) {
     slotTimers[slot] = setTimeout(function() {
         if (slotState[slot] !== 'loading') return;
         if (!slotSawSignal[slot]) {
-            handleVideoFailure(slot);   // zero sinal → falha rápida
+            // v16 — T3: zero sinal é o padrão do BLOQUEIO da maquinaria de
+            // anúncios — ANTES de falhar o vídeo, o stallOrFailure tenta a
+            // reserva sem anúncios (Piped) e só falha se ela também não
+            // puder servir o vídeo
+            stallOrFailure(slot);
             return;
         }
         slotTimers[slot] = setTimeout(function() {
-            if (slotState[slot] === 'loading') handleVideoFailure(slot);
+            if (slotState[slot] === 'loading') stallOrFailure(slot);
         }, SLOT_TIMEOUT_MS - STALL_CHECK_MS);
     }, STALL_CHECK_MS);
 }
@@ -1097,6 +1110,806 @@ function serveNextVideo() {
 }
 
 // ═════════════════════════════════════════════════════════════════
+// MOTOR DE RESERVA ANTI-ANÚNCIOS — PIPED (v16)
+// ═════════════════════════════════════════════════════════════════
+// PROBLEMA (ver Historico.txt): com o adblock DESLIGADO, o YouTube
+// serve ANÚNCIOS no início (e às vezes a meio) dos vídeos de fundo —
+// e a maquinaria de anúncios (handshake + carregamento) era a causa
+// dos delays de 1-2 minutos e dos vídeos que nem arrancavam. Com
+// adblock, tudo funcionava perfeitamente — o anúncio é o único
+// culpado.
+//
+// DECISÃO TÉCNICA (pesquisa vasta pelos docs das duas APIs, viva, a
+// partir desta máquina + na web — 2026-08):
+//   • Invidious (docs.invidious.io): documentação excelente (schema
+//     completo de /api/v1/videos: lengthSeconds, formatStreams,
+//     adaptiveFormats, hlsUrl), MAS a rede pública está MORTA ao
+//     nível da API: a lista oficial (api.invidious.io/instances.json)
+//     tem 11 instâncias e TODAS as https respondem «Endpoint
+//     disabled» (api:false — os operadores desligaram a API sob o
+//     bloqueio massivo do YouTube desde 2024); o campo oficial
+//     «cors» das instâncias é false. Impossível servir um site de
+//     terceiros.
+//   • Piped (docs.piped.video): documentação oficial completa do
+//     endpoint /streams/:videoId (schema verificado AO VIVO e em
+//     conformidade com os docs), rede pública VIVA (≥1 instância a
+//     responder com dados reais e streams jogáveis mesmo a partir
+//     de um IP de datacenter — o browser residencial vê ainda
+//     melhor), e — o factor decisivo — ARQUITECTURA desenhada para
+//     consumo cross-origin: o frontend, a API e o proxy de streams
+//     vivem em ORIGENS DIFERENTES, pelo que a API responde com
+//     Access-Control-Allow-Origin: * e o proxy serve os streams com
+//     CORS + range requests (206) — verificado com testes reais.
+//   → ESCOLHA: Piped. Instabilidade relativa das instâncias (o
+//     YouTube bloqueia a extracção de formatos intermitentemente —
+//     os "PO tokens") é mitigada com ROTAÇÃO de instâncias
+//     (lista fixa + lista dinâmica oficial), cache e COOLDOWN; e o
+//     motor NUNCA piora o comportamento actual: se o Piped falhar,
+//     tudo cai nos caminhos do YouTube de sempre.
+//
+// ARQUITECTURA (pensada para TODAS as formas de interagir com os
+// vídeos — activação no carrossel, troca pelo botão de fundo, avanço
+// automático no ENDED, recuperação de falhas, pré-carga e verificador):
+//   • O YouTube continua a ser a fonte PRIMÁRIA de cada vídeo (como
+//     até hoje — é o arranque mais rápido quando não há anúncio).
+//   • Cada carga de vídeo lança em PARALELO uma PRÉ-BUSCA na API do
+//     Piped (metadados: duração real + streams). A duração real é o
+//     GROUND TRUTH da detecção de anúncios.
+//   • DETECÇÃO (3 camadas, todas invisíveis — o anúncio nunca chega
+//     a ser visto/ouvido, porque a troca acontece na fase muda e
+//     invisível do pré-roll):
+//       T1 — DURAÇÃO ≠ duração real (Piped): enquanto um anúncio
+//            toca, o getDuration() do IFrame API reporta a DURAÇÃO
+//            DO ANÚNCIO (o IFrame API não tem evento de anúncio —
+//            this é a heurística clássica; confirmação na issue
+//            oficial #143 do repositorio do widget). Detecta
+//            pré-roll E mid-roll (a duração reportada passa a ser a
+//            do anúncio em qualquer altura).
+//       T2 — SALTO de duração entre sondas (sem ground truth, quando
+//            o Piped não respondeu): a duração reportada MUDA a meio
+//            da reprodução → anúncio começou (ou acabou).
+//       T3 — SEM SINAL: o player YT não deu sinal de vida em 6s
+//            (STALL_CHECK_MS) ou não chegou a PLAYING em 25s — o
+//            padrão exacto do bloqueio da maquinaria de anúncios.
+//   • TROCA INSTANTÂNEA: ao detectar, o slot troca o player YT por
+//     um PLAYER NATIVO (<video> — SEM iframe, SEM anúncios, SEM
+//     cookies, SEM UI) que implementa a MESMA interface do
+//     YT.Player usada por este ficheiro (playVideo/seekTo/mute/
+//     setVolume/getDuration/onStateChange…) — por isso TODA a
+//     máquina existente (estados, timers, pré-roll, crossfade,
+//     fades de áudio, qualidade, loop silencioso, dock, olho…)
+//     continua a funcionar SEM ALTERAÇÕES. O vídeo retoma na última
+//     posição REAL conhecida (mid-roll) ou do início (pré-roll).
+//   • QUALIDADE: o player nativo escolhe o MELHOR par vídeo+áudio
+//     MP4/H.264 ≤1080p do Piped (modo «dual»: <video> mudo + <audio>
+//     sincronizado — dá 1080p, acima do máximo progressivo 720p;
+//     correcção de deriva a cada 400ms); fallback: stream muxed
+//     (vídeo+áudio num só MP4, 720p/360p); último recurso: HLS
+//     (Safari nativo). Tudo sem bibliotecas externas.
+//   • RESILIÊNCIA MÚTUA: slot que falha no NATIVO volta ao YouTube
+//     (1 reciclagem por carga); slot que falha/anuncia no YOUTUBE
+//     vai para o nativo (máx. 2 trocas por carga — nunca ping-pong
+//     infinito). Quando tudo falha, o ciclo de falhas de SEMPRE
+//     assume o controlo (consecutiveErrors → desactivar).
+//   • VERIFICADOR: o «Verify All Videos» ganhou uma sonda de reserva
+//     — cada vídeo que FALHA no YouTube é também testado via Piped
+//     (metadados + stream com range request), e o relatório/overlay
+//     mostram se o site o consegue ainda reproduzir sem anúncios.
+//   • Introspecção: window._zenCtrl.fallback() — estado do motor,
+//     instância activa, estatísticas de detecção/troca.
+// Nota honesta: as instâncias Piped são operadas pela comunidade —
+// a disponibilidade varia ao longo do dia. O motor roda com o que
+// existir e, quando nada existe, o website comporta-se EXACTAMENTE
+// como antes desta versão (zero regressões garantidas por desenho).
+const PIPED_CANDIDATES = [
+    'https://pipedapi.ducks.party',       // verificada viva (API+proxy+CORS+range)
+    'https://pipedapi.kavin.rocks',       // oficial do projecto
+    'https://api.piped.private.coffee',
+    'https://pipedapi.reallyaweso.me',
+    'https://api.piped.projectsegfau.lt',
+    'https://pipedapi.adminforge.de',
+    'https://pipedapi.drgns.space',
+    'https://piped-api.lunar.icu'
+];
+const PIPED_LIST_URL    = 'https://piped-instances.kavin.rocks/'; // lista dinâmica oficial
+const PIPED_API_KEY     = 'zen_fallback_api';   // localStorage: instância saudável
+const PIPED_FETCH_MS    = 7000;   // timeout por instância (fetch do JSON)
+const PIPED_CACHE_MS    = 30 * 60000;   // cache de metadados/streams por vídeo
+const PIPED_FAIL_MS     = 5 * 60000;    // cache negativo (instâncias indisponíveis)
+const PIPED_COOLDOWN_MS = 5 * 60000;    // tudo falhou → pausa do motor
+const AD_POLL_MS        = 700;    // cadência da sonda de duração (anúncios)
+const AD_TOLERANCE      = 5;      // segundos de tolerância na comparação
+
+let pipedHealthy = null;         // base URL da instância saudável (persistida)
+try { pipedHealthy = localStorage.getItem(PIPED_API_KEY) || null; } catch (e) {}
+let pipedDynamicList = [];       // instâncias descobertas na lista dinâmica
+let pipedListAt = 0;
+let pipedCooldownUntil = 0;
+let pipedPreconnected = false;
+const pipedCache = new Map();    // videoId → info normalizada
+const pipedInflight = new Map(); // videoId → promise (single-flight)
+const fallbackStats = {
+    fetches: 0, okFetches: 0, fetchFails: 0,
+    adHits: 0, adSwitches: 0, stallSwitches: 0, errorSwitches: 0,
+    switchFails: 0, ytFallbacks: 0
+};
+
+// fetch JSON com timeout (AbortController) — nunca lança fora do catch
+function pipedTimedJSON(url, ms) {
+    return new Promise(function(resolve, reject) {
+        let done = false;
+        const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        const t = setTimeout(function() {
+            if (done) return; done = true;
+            if (ctl) { try { ctl.abort(); } catch (e) {} }
+            reject(new Error('timeout'));
+        }, ms);
+        fetch(url, ctl ? { signal: ctl.signal, credentials: 'omit', cache: 'no-store' }
+                       : { credentials: 'omit', cache: 'no-store' })
+        .then(function(r) {
+            if (done) return; done = true; clearTimeout(t);
+            if (!r.ok) { reject(new Error('http ' + r.status)); return; }
+            r.json().then(resolve, function(e) { reject(e); });
+        }, function(e) {
+            if (done) return; done = true; clearTimeout(t); reject(e);
+        });
+    });
+}
+
+// HEAD-less probe de stream (range GET de 2 bytes — confirma CORS+206)
+function pipedProbeStream(url) {
+    return new Promise(function(resolve) {
+        let done = false;
+        const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        const t = setTimeout(function() {
+            if (done) return; done = true;
+            if (ctl) { try { ctl.abort(); } catch (e) {} }
+            resolve(false);
+        }, PIPED_FETCH_MS);
+        fetch(url, ctl ? { signal: ctl.signal, headers: { Range: 'bytes=0-1' } }
+                       : { headers: { Range: 'bytes=0-1' } })
+        .then(function(r) {
+            if (done) return; done = true; clearTimeout(t);
+            resolve(r.status === 206 || r.status === 200);
+            try { if (r.body && r.body.cancel) r.body.cancel(); } catch (e) {}
+        }, function() {
+            if (done) return; done = true; clearTimeout(t); resolve(false);
+        });
+    });
+}
+
+// Lista dinâmica oficial (uma tentativa por 10 min): os Piped frontends
+// usam esta lista para o selector de instância — os formatos variam
+// (api_url/api), pelo que a leitura é defensiva (qualquer falha → ignore)
+function pipedRefreshList() {
+    if (Date.now() - pipedListAt < 10 * 60000) return Promise.resolve(false);
+    pipedListAt = Date.now();
+    return pipedTimedJSON(PIPED_LIST_URL, 10000).then(function(arr) {
+        if (Array.isArray(arr)) {
+            arr.forEach(function(it) {
+                const u = it && (it.api_url || it.api || it.apiUrl);
+                if (typeof u === 'string' && u.indexOf('https://') === 0 &&
+                    PIPED_CANDIDATES.indexOf(u) < 0 && pipedDynamicList.indexOf(u) < 0) {
+                    pipedDynamicList.push(u);
+                }
+            });
+            return true;
+        }
+        return false;
+    }, function() { return false; });
+}
+
+function pipedTryBases() {
+    const list = [];
+    if (pipedHealthy) list.push(pipedHealthy);
+    PIPED_CANDIDATES.concat(pipedDynamicList).forEach(function(b) {
+        if (list.indexOf(b) < 0) list.push(b);
+    });
+    return list;
+}
+
+function markPipedHealthy(base) {
+    if (pipedHealthy === base) return;
+    pipedHealthy = base;
+    try { localStorage.setItem(PIPED_API_KEY, base); } catch (e) {}
+}
+
+// ═══ SELECÇÃO DE STREAMS (a melhor qualidade jogável, sem MSE) ═══
+// Piped devolve: videoStreams[] (MUXED com áudio — máx 720p; e
+// videoOnly — até 4K) + audioStreams[] (M4A separado). Sem MSE/hls.js:
+//   1.º DUAL: <video> mudo (videoOnly ≤1080p) + <audio> sincronizado
+//        → 1080p COM som (acima do tecto muxed de 720p);
+//   2.º MUXED: MP4 progressivo com áudio (720p/360p) directo no <video>;
+//   3.º HLS: manifest m3u8 (Safari nativo apenas — canPlayType).
+function qualityToYTLabel(h) {
+    if (!h) return 'auto';
+    if (h >= 2160) return 'hd2160';
+    if (h >= 1440) return 'hd1440';
+    if (h >= 1080) return 'hd1080';
+    if (h >= 720)  return 'hd720';
+    if (h >= 480)  return 'large';
+    if (h >= 360)  return 'medium';
+    return 'small';
+}
+function streamHeight(s) {
+    if (typeof s.height === 'number' && s.height > 0) return s.height;
+    const m = /(\d{3,4})p/.exec(String(s.quality || ''));
+    return m ? parseInt(m[1], 10) : 0;
+}
+function pickPipedStreams(j) {
+    try {
+        const vs = Array.isArray(j.videoStreams) ? j.videoStreams : [];
+        const as = Array.isArray(j.audioStreams) ? j.audioStreams : [];
+        const mp4 = function(s) { return (s.mimeType || '').indexOf('video/mp4') === 0; };
+        const isHls = function(s) {
+            return /M3U8|HLS/i.test(String(s.format || '')) ||
+                   (s.mimeType || '').indexOf('mpegurl') !== -1;
+        };
+        const muxed = vs.filter(function(s) {
+            return !s.videoOnly && !isHls(s) && mp4(s) && s.url;
+        }).sort(function(a, b) { return streamHeight(b) - streamHeight(a); });
+        const vo = vs.filter(function(s) {
+            return s.videoOnly && mp4(s) && s.url && streamHeight(s) <= 1080;
+        }).sort(function(a, b) {
+            return (streamHeight(b) - streamHeight(a)) ||
+                   ((b.bitrate || 0) - (a.bitrate || 0));
+        });
+        const aud = as.filter(function(a) {
+            return (a.mimeType || '').indexOf('audio/mp4') === 0 && a.url;
+        }).sort(function(a, b) { return (b.bitrate || 0) - (a.bitrate || 0); });
+
+        if (vo.length && aud.length) {
+            const h = streamHeight(vo[0]);
+            return {
+                mode: 'dual', videoUrl: vo[0].url, audioUrl: aud[0].url,
+                height: h, qualityLabel: qualityToYTLabel(h),
+                muxedUrl: muxed.length ? muxed[0].url : null,   // degradação dual→muxed
+                detail: (vo[0].quality || (h + 'p')) + ' + ' + (aud[0].quality || 'audio')
+            };
+        }
+        if (muxed.length) {
+            const h = streamHeight(muxed[0]);
+            return {
+                mode: 'muxed', videoUrl: muxed[0].url, audioUrl: null,
+                height: h, qualityLabel: qualityToYTLabel(h),
+                detail: muxed[0].quality || (h ? h + 'p' : 'unknown')
+            };
+        }
+        if (typeof j.hls === 'string' && j.hls) {
+            const test = document.createElement('video').canPlayType('application/vnd.apple.mpegurl');
+            if (test) return {
+                mode: 'hls', videoUrl: j.hls, audioUrl: null,
+                height: 0, qualityLabel: 'auto', detail: 'HLS'
+            };
+        }
+    } catch (e) {}
+    return null;
+}
+
+function normalizePiped(j, base, videoId) {
+    return {
+        ok: true, at: Date.now(), base: base, videoId: videoId,
+        duration: j.duration,
+        title: typeof j.title === 'string' ? j.title : '',
+        thumbnail: typeof j.thumbnailUrl === 'string' ? j.thumbnailUrl : '',
+        hls: typeof j.hls === 'string' ? j.hls : null,
+        pick: pickPipedStreams(j)
+    };
+}
+
+async function pipedFetchVideoCore(videoId) {
+    const cached = pipedCache.get(videoId);
+    if (cached &&
+        ((cached.ok && Date.now() - cached.at < PIPED_CACHE_MS) ||
+         (!cached.ok && Date.now() - cached.at < PIPED_FAIL_MS))) {
+        return cached.ok ? cached : null;
+    }
+    if (Date.now() < pipedCooldownUntil) return (cached && cached.ok) ? cached : null;
+    fallbackStats.fetches++;
+
+    const tryBases = async function(bases) {
+        let sawInfo = null;   // 200 com JSON válido (mesmo sem streams → ground truth)
+        for (const base of bases) {
+            try {
+                const j = await pipedTimedJSON(base + '/streams/' + videoId, PIPED_FETCH_MS);
+                if (!j || typeof j.duration !== 'number' || !Array.isArray(j.videoStreams)) continue;
+                const info = normalizePiped(j, base, videoId);
+                sawInfo = info;
+                if (info.pick) {   // streams jogáveis → sucesso pleno
+                    pipedCache.set(videoId, info);
+                    markPipedHealthy(base);
+                    fallbackStats.okFetches++;
+                    return info;
+                }
+                // 200 mas extracção degradada (sem streams) → continua à procura
+            } catch (e) {}
+        }
+        return sawInfo;
+    };
+
+    let info = await tryBases(pipedTryBases().slice(0, 4));
+    if (!info || !info.pick) {
+        const refreshed = await pipedRefreshList();   // 1 refresh por 10 min
+        if (refreshed) {
+            const first = pipedTryBases().slice(0, 4);
+            const extra = pipedTryBases().filter(function(b) { return first.indexOf(b) < 0; }).slice(0, 2);
+            if (extra.length) {
+                const info2 = await tryBases(extra);
+                if (info2 && info2.pick) info = info2;
+                else if (info2 && !info) info = info2;
+            }
+        }
+    }
+    if (info) {
+        pipedCache.set(videoId, info);   // metadados servem de ground truth
+        return info;
+    }
+    pipedCache.set(videoId, { ok: false, at: Date.now() });
+    pipedCooldownUntil = Date.now() + PIPED_COOLDOWN_MS;
+    fallbackStats.fetchFails++;
+    return null;
+}
+
+// single-flight: chamadas paralelas do MESMO vídeo partilham a promise
+function pipedFetchVideo(videoId) {
+    if (pipedInflight.has(videoId)) return pipedInflight.get(videoId);
+    const pr = pipedFetchVideoCore(videoId).then(function(info) {
+        pipedInflight.delete(videoId);
+        return info;
+    }, function() {
+        pipedInflight.delete(videoId);
+        return null;
+    });
+    pipedInflight.set(videoId, pr);
+    return pr;
+}
+
+// pré-busca (fire-and-forget) — aquece metadados+streams para a
+// detecção (ground truth) e para a eventual troca instantânea
+function pipedWarm(videoId) {
+    if (!videoId) return;
+    try { pipedFetchVideo(videoId); } catch (e) {}
+}
+
+// ═══ PLAYER NATIVO — duck-typing da interface do YT.Player ═══
+// Implementa EXACTAMENTE os métodos usados pela máquina existente,
+// com os mesmos SEMÂNTICAS (volume 0-100, getDuration 0 até carregar,
+// eventos → onState/onErrorEvt), pelo que a two-slot machine, os
+// timers, o pré-roll, o crossfade, os fades de áudio, o loop
+// silencioso e o dock funcionam SEM alterações sobre este player.
+class NativePlayer {
+    constructor(slot, videoDef, opts) {
+        const o = opts || {};
+        this.slot = slot;
+        this.__native = true;          // marca de introspecção
+        this.videoId = videoDef.id;
+        this.startAt = (typeof videoDef.start === 'number') ? videoDef.start : 0;
+        this.endAt   = (typeof videoDef.end   === 'number') ? videoDef.end   : null;
+        this.resumeAt = o.resumeAt || 0;
+        this.bornVisible = !!o.visible;
+        this.title = '';
+        this.qualityLabel = 'auto';
+        this._info = null;
+        this._dead = false;
+        this._gen = 0;
+        this._endedFired = false;
+        this._tick = null;
+        this.audioEl = null;
+
+        const cover = coverEl(slot);
+        cover.innerHTML = '';           // remove o iframe do YT (como createPlayer)
+        const v = document.createElement('video');
+        v.className = 'zen-native-video';
+        v.setAttribute('playsinline', '');
+        v.setAttribute('webkit-playsinline', '');
+        v.preload = 'auto';
+        v.muted = true;                 // nasce MUDO — o som entra pelos caminhos de sempre
+        v.volume = 0;
+        cover.appendChild(v);
+        this.videoEl = v;
+        this._wire();
+        this._load();
+    }
+
+    _wire() {
+        const self = this, v = this.videoEl;
+        v.addEventListener('playing', function() {
+            if (self._dead) return;
+            onState(self.slot, YT_PLAYING);
+        });
+        v.addEventListener('waiting', function() {
+            if (self._dead) return;
+            onState(self.slot, YT_BUFFERING);
+        });
+        v.addEventListener('pause', function() {
+            if (self._dead) return;
+            // equivalente ao PAUSED do YT (a máquina ignora-o)
+        });
+        v.addEventListener('ended', function() {
+            if (self._dead) return;
+            self._dispatchEnded();
+        });
+        v.addEventListener('error', function() {
+            if (self._dead) return;
+            if (!v.error && !v.currentSrc) return;   // stopVideo (src removido) — não é erro
+            self._fail('video element error');
+        });
+        v.addEventListener('loadedmetadata', function() {
+            if (self._dead) return;
+            const target = self.resumeAt > 0 ? self.resumeAt : self.startAt;
+            if (target > 0) { try { v.currentTime = target; } catch (e) {} }
+        });
+    }
+
+    _wireAudio() {
+        const self = this, a = this.audioEl;
+        if (!a) return;
+        // áudio morre (rede/instância) → degradar para o stream MUXED
+        // (vídeo+áudio num só MP4) SEM perder a posição; sem backup,
+        // o vídeo segue mudo — nunca a reprodução morre por causa disto
+        a.addEventListener('error', function() {
+            if (self._dead || !a.error) return;
+            const backup = self._muxedBackup || null;
+            self.audioEl = null;   // a partir daqui o som vive no <video>
+            try { a.pause(); a.removeAttribute('src'); a.load(); } catch (e) {}
+            if (!backup) return;
+            const t = self.videoEl.currentTime;
+            const onMeta = function() {
+                self.videoEl.removeEventListener('loadedmetadata', onMeta);
+                try { if (t > 0) self.videoEl.currentTime = t; } catch (e) {}
+            };
+            self.videoEl.addEventListener('loadedmetadata', onMeta);
+            self.videoEl.src = backup;
+            self.playVideo();
+        });
+    }
+
+    async _load() {
+        const self = this;
+        const gen = ++this._gen;
+        const info = await pipedFetchVideo(this.videoId);
+        if (self._dead || gen !== self._gen) return;    // substituído entretanto
+        if (!zenOn) return;                             // desligado — o deactivate trata do resto
+        if (!info) { self._fail('piped unavailable'); return; }
+        if (!info.pick) { self._fail('no piped streams'); return; }
+        self._info = info;
+        self.title = info.title || '';
+        if (info.thumbnail) { try { self.videoEl.poster = info.thumbnail; } catch (e) {} }
+
+        const pick = info.pick;
+        // backup de degradação do modo dual (áudio morre → muxed)
+        self._muxedBackup = (pick.mode === 'dual' && pick.muxedUrl) ? pick.muxedUrl : null;
+        if (pick.mode === 'dual') {
+            const a = document.createElement('audio');
+            a.preload = 'auto';
+            a.muted = true;
+            a.volume = 0;
+            self.audioEl = a;
+            self._wireAudio();
+            self.videoEl.src = pick.videoUrl;
+            a.src = pick.audioUrl;
+        } else {
+            self.videoEl.src = pick.videoUrl;
+        }
+        self.qualityLabel = pick.qualityLabel || 'auto';
+
+        // continuidade de som numa troca a VÍDEO JÁ REVELADO (mid-roll):
+        // entra directamente no volume actual (sem fade — o som nunca
+        // "salta"); nos restantes casos nasce mudo e o becomeActive/
+        // gesto liga-o com o fade de sempre
+        if (self.bornVisible && soundOn) {
+            self.setVolume(volume);
+            self.unMute();
+        }
+        self._tickStart();
+        self.playVideo();
+    }
+
+    _tickStart() {
+        this._tickStop();
+        const self = this;
+        this._tick = setInterval(function() {
+            if (self._dead) return;
+            const v = self.videoEl;
+            // CORTE «end» (trim do vídeo — paridade com playerVars.end do YT)
+            if (self.endAt != null && !v.paused && !v.ended &&
+                v.currentTime >= self.endAt) {
+                self._dispatchEnded();
+                return;
+            }
+            // MODO DUAL: correcção de deriva áudio↔vídeo (0,35s de folga —
+            // conteúdo ambiente, sem sincronia labial)
+            if (self.audioEl && !v.paused && !self.audioEl.paused) {
+                const drift = Math.abs(self.audioEl.currentTime - v.currentTime);
+                if (drift > 0.35) {
+                    try { self.audioEl.currentTime = v.currentTime; } catch (e) {}
+                }
+            }
+        }, 400);
+    }
+    _tickStop() {
+        if (this._tick) { clearInterval(this._tick); this._tick = null; }
+    }
+
+    _dispatchEnded() {
+        if (this._endedFired) return;
+        this._endedFired = true;
+        onState(this.slot, YT_ENDED);
+    }
+
+    _fail(reason) {
+        if (this._dead) return;
+        this._dead = true;
+        this._tickStop();
+        try { console.log('[zen] reserva Piped falhou (' + reason + ')'); } catch (e) {}
+        onErrorEvt(this.slot);   // o ramo nativo do onErrorEvt decide o destino
+    }
+
+    // ── interface YT.Player ──────────────────────────────────────
+    playVideo() {
+        const self = this;
+        const pr = this.videoEl.play();
+        if (pr && pr.catch) pr.catch(function() {
+            // autoplay com som bloqueado → mudo e repete (o gesto do
+            // utilizador retoma o som, como no player do YT)
+            self.mute();
+            const p2 = self.videoEl.play();
+            if (p2 && p2.catch) p2.catch(function() {});
+        });
+        if (this.audioEl) {
+            const pa = this.audioEl.play();
+            if (pa && pa.catch) pa.catch(function() {});
+        }
+    }
+    pauseVideo() {
+        try { this.videoEl.pause(); } catch (e) {}
+        if (this.audioEl) { try { this.audioEl.pause(); } catch (e) {} }
+    }
+    stopVideo() {
+        this.pauseVideo();
+        this._tickStop();
+        // liberta a ligação (paridade com o stopVideo do YT — deixa de
+        // consumir largura de banda)
+        try { this.videoEl.removeAttribute('src'); this.videoEl.load(); } catch (e) {}
+        if (this.audioEl) { try { this.audioEl.removeAttribute('src'); this.audioEl.load(); } catch (e) {} }
+    }
+    seekTo(sec) {
+        this._endedFired = false;
+        const t = Number(sec) || 0;
+        try { this.videoEl.currentTime = t; } catch (e) {}
+        if (this.audioEl) { try { this.audioEl.currentTime = t; } catch (e) {} }
+    }
+    mute() {
+        try { this.videoEl.muted = true; } catch (e) {}
+        if (this.audioEl) { try { this.audioEl.muted = true; } catch (e) {} }
+    }
+    unMute() {
+        // DUAL: o som vive no <audio> (o <video> fica mudo para sempre);
+        // MUXED: o <video> é a fonte de som
+        if (this.audioEl) { try { this.audioEl.muted = false; this.videoEl.muted = true; } catch (e) {} }
+        else { try { this.videoEl.muted = false; } catch (e) {} }
+        // HARDENING: browsers sem activação do utilizador PAUSAM um vídeo
+        // que nasceu em autoplay mudo no instante em que é desmutado (a
+        // mesma política que o STRICT_AUDIO cobre no player do YT). Se o
+        // elemento estiver pausado por essa via, RETOMAR — o gesto real do
+        // utilizador (listener pointerdown/keydown/wheel de sempre) garante
+        // que isto corre dentro de interacção legítima.
+        try { if (this.videoEl.paused && this.videoEl.currentSrc) this.playVideo(); } catch (e) {}
+    }
+    isMuted() {
+        return this.audioEl ? this.audioEl.muted : this.videoEl.muted;
+    }
+    setVolume(v) {   // escala 0-100 (igual ao YT)
+        const n = Math.max(0, Math.min(100, Number(v) || 0)) / 100;
+        if (this.audioEl) { try { this.audioEl.volume = n; } catch (e) {} }
+        else { try { this.videoEl.volume = n; } catch (e) {} }
+    }
+    getVolume() {
+        const n = this.audioEl ? this.audioEl.volume : this.videoEl.volume;
+        return Math.round((n || 0) * 100);
+    }
+    getDuration() {
+        const d = this.videoEl.duration;
+        return (typeof d === 'number' && isFinite(d)) ? d : 0;
+    }
+    getCurrentTime() {
+        return this.videoEl.currentTime || 0;
+    }
+    getVideoData() {
+        return { title: this.title, video_id: this.videoId, author: 'Piped' };
+    }
+    getIframe() { return null; }   // ensureIframeAllow faz guard
+    unloadModule() {}              // killCaptions faz guard
+    getAvailableQualityLevels() { return [this.qualityLabel]; }
+    getPlaybackQuality() { return this.qualityLabel; }
+    setPlaybackQuality() {}        // qualidade fixa na escolha (≤1080p)
+    loadVideoById(args) {          // troca de vídeo REUTILIZANDO o elemento
+        if (!args || !args.videoId) return;
+        this.videoId = args.videoId;
+        this.startAt = (typeof args.startSeconds === 'number') ? args.startSeconds : 0;
+        this.endAt   = (typeof args.endSeconds   === 'number') ? args.endSeconds   : null;
+        this.resumeAt = 0;
+        this._endedFired = false;
+        this._dead = false;
+        this.bornVisible = false;
+        this._load();
+    }
+    destroy() {
+        this._dead = true;
+        this._tickStop();
+        this.stopVideo();
+        try { if (this.videoEl.parentNode) this.videoEl.parentNode.removeChild(this.videoEl); } catch (e) {}
+    }
+}
+
+// ═══ VIGILÂNCIA ANTI-ANÚNCIOS (player YT em reprodução) ═══
+// Sonda periódica getDuration/getCurrentTime: enquanto toca um
+// anúncio, o IFrame API reporta a DURAÇÃO DO ANÚNCIO (não existe
+// evento oficial de anúncio no IFrame API — ver docs + issue #143;
+// a comparação com a duração REAL do vídeo é o ground truth clássico).
+const adWatch = { A: null, B: null };   // {phase, expected, lastDur, lastRealTime, poll, busy}
+const swapAttempts  = { A: 0, B: 0 };   // orçamento de trocas YT↔nativo POR CARGA (máx 2)
+const nativeRecycled = { A: false, B: false }; // 1 reciclagem nativo→YT por carga
+
+function startAdWatch(slot) {
+    stopAdWatch(slot);
+    const w = { phase: 'watch', expected: null, lastDur: 0, lastRealTime: 0,
+                busy: false, poll: null };
+    w.poll = setInterval(function() { adTick(slot); }, AD_POLL_MS);
+    adWatch[slot] = w;
+}
+function stopAdWatch(slot) {
+    const w = adWatch[slot];
+    if (w && w.poll) { clearInterval(w.poll); w.poll = null; }
+    adWatch[slot] = null;
+}
+function adTick(slot) {
+    const w = adWatch[slot];
+    if (!w || w.busy) return;
+    const p = players[slot];
+    if (!p || p.__native) { stopAdWatch(slot); return; }
+    const st = slotState[slot];
+    if (st !== 'playing') {
+        if (st === 'stopped' || st === 'idle' || st === 'error' || st === 'empty') stopAdWatch(slot);
+        return;
+    }
+    let d = 0, t = 0;
+    try { d = p.getDuration() || 0; t = p.getCurrentTime() || 0; } catch (e) { return; }
+    if (!(d > 0)) return;
+
+    // ground truth (duração real) — da pré-busca Piped, se já chegou
+    if (w.expected == null) {
+        const v = slotVideo[slot];
+        const c = v ? pipedCache.get(v.id) : null;
+        if (c && c.ok && typeof c.duration === 'number' && c.duration > 0) w.expected = c.duration;
+    }
+    const mismatch = (w.expected != null) && Math.abs(d - w.expected) > AD_TOLERANCE;
+    const jump = w.lastDur > 0 && Math.abs(d - w.lastDur) > AD_TOLERANCE;
+
+    if (mismatch || jump) {
+        // ── ANÚNCIO DETECTADO ── a duração reportada é a do ANÚNCIO (ou
+        // saltou ao entrar/sair de um): troca IMEDIATA de motor, retomando
+        // na última posição REAL conhecida do vídeo (pré-roll: 0/início).
+        w.busy = true;
+        w.phase = 'ad';
+        fallbackStats.adHits++;
+        const resumeAt = w.lastRealTime;
+        trySwitchToNative(slot, 'ad', resumeAt).then(function(ok) {
+            if (ok) { stopAdWatch(slot); return; }
+            // troca falhou (Piped em baixo) → repor os marcos para não
+            // redisparar a cada sonda; a vigilância continua (T2/T3)
+            w.busy = false;
+            w.expected = null;
+            w.lastDur = d;
+        });
+        return;
+    }
+    // duração coerente → amostra limpa: memoriza a posição REAL
+    w.lastRealTime = t;
+    w.lastDur = d;
+    w.phase = 'clean';
+}
+
+// ═══ A TROCA (o coração do sistema) ═══
+async function trySwitchToNative(slot, reason, resumeAt) {
+    if (!zenOn || !activeOption) return false;
+    const p = players[slot];
+    if (!p || p.__native) return false;
+    const st = slotState[slot];
+    if (st === 'idle' || st === 'stopped' || st === 'empty') return false;
+    if (swapAttempts[slot] >= 2) return false;
+    const video = slotVideo[slot];
+    if (!video || !video.id) return false;
+
+    const info = await pipedFetchVideo(video.id);
+    // revalidação: o estado pode ter mudado durante a busca (desligar,
+    // troca rápida por cima, reciclagem, o YT recuperou a bom tempo…)
+    if (!zenOn || !activeOption) return false;
+    if (slotVideo[slot] !== video) return false;
+    if (players[slot] !== p) return false;
+    const st2 = slotState[slot];
+    if (st2 === 'idle' || st2 === 'stopped' || st2 === 'empty') return false;
+    if (!info || !info.pick) { fallbackStats.switchFails++; return false; }
+    if (reason === 'stall' && st2 === 'playing') {
+        // o player YT recuperou entretanto — só trocar se ainda parecer
+        // anúncio (duração reportada ≠ duração real)
+        let d = 0;
+        try { d = p.getDuration() || 0; } catch (e) {}
+        if (d > 0 && Math.abs(d - info.duration) <= AD_TOLERANCE) return false;
+    }
+
+    // ── A TROCA EM SI ── o player YT pára, o NATIVO nasce no MESMO slot
+    // com a MESMA interface → estados, timers, crossfades e som seguem
+    // a funcionar por dentro (zero alterações na máquina existente).
+    swapAttempts[slot]++;
+    try { p.stopVideo(); } catch (e) {}
+    const visible = coverEl(slot).classList.contains('visible');
+    const np = new NativePlayer(slot, video, { resumeAt: resumeAt || 0, visible: visible });
+    players[slot] = np;
+    pReady[slot] = true;             // loadVideoById directo é sempre seguro no nativo
+    slotState[slot] = 'loading';     // a revelação volta a aguardar o PLAYING nativo
+    clearRevealTimer(slot);
+    armSlotTimer(slot);
+    stopAdWatch(slot);
+    if (reason === 'stall') fallbackStats.stallSwitches++;
+    else if (reason === 'error') fallbackStats.errorSwitches++;
+    else                      fallbackStats.adSwitches++;
+    try {
+        const motivo = reason === 'stall' ? 'vídeo sem sinal'
+                     : reason === 'error' ? 'vídeo bloqueado no YouTube'
+                     : 'anúncio detectado';
+        console.log('[zen] ' + motivo + ' — a reproduzir sem anúncios via ' +
+            info.base + ' (' + info.pick.detail + ')');
+    } catch (e) {}
+    return true;
+}
+
+// reciclagem nativo→YouTube (falha do Piped num slot em carga): o
+// createPlayer repõe o player YT fresco — o ciclo de detecção recomeça.
+// Não repõe os guards: o orçamento de trocas continua o MESMO (sem
+// ping-pong infinito).
+function recycleNativeToYT(slot) {
+    const video = slotVideo[slot];
+    if (!video || !zenOn) return false;
+    fallbackStats.ytFallbacks++;
+    try { if (players[slot] && players[slot].destroy) players[slot].destroy(); } catch (e) {}
+    createPlayer(slot, video, false, soundOn);
+    return true;
+}
+
+// T3 — o slot não deu sinal (ou não chegou a PLAYING a tempo): ANTES
+// de falhar o vídeo, tentar a reserva; se o player é o NATIVO preso,
+// uma reciclagem ao YouTube; em último caso, o ciclo de falhas normal.
+function stallOrFailure(slot) {
+    if (slotState[slot] !== 'loading') return;
+    const p = players[slot];
+    if (p && p.__native) {
+        if (!nativeRecycled[slot] && swapAttempts[slot] < 2 && zenOn) {
+            nativeRecycled[slot] = true;
+            swapAttempts[slot]++;
+            recycleNativeToYT(slot);
+            return;
+        }
+        handleVideoFailure(slot);
+        return;
+    }
+    if (p) {
+        trySwitchToNative(slot, 'stall', 0).then(function(ok) {
+            if (!ok) handleVideoFailure(slot);
+        });
+        return;
+    }
+    handleVideoFailure(slot);
+}
+
+// reset do orçamento de trocas — UMA vez por carga de vídeo (o
+// loadVideoInto é a entrada universal de novas cargas)
+function resetLoadGuards(slot) {
+    swapAttempts[slot] = 0;
+    nativeRecycled[slot] = false;
+}
+
+// ═════════════════════════════════════════════════════════════════
 // MÁQUINA DE ESTADOS DOS SLOTS
 // ═════════════════════════════════════════════════════════════════
 function onState(slot, state) {
@@ -1126,6 +1939,14 @@ function onState(slot, state) {
         consecutiveErrors = 0;
         slotState[slot] = 'playing';
         clearSlotTimer(slot);
+        // v16 — ANTI-ANÚNCIOS: arranque imediato da vigilância (o PLAYING
+        // durante um anúncio reporta a DURAÇÃO DO ANÚNCIO no getDuration —
+        // a sonda compara-a com a duração real da pré-busca Piped) e uma
+        // sonda logo no instante (a detecção mais rápida possível)
+        if (players[slot] && !players[slot].__native) {
+            if (!adWatch[slot]) startAdWatch(slot);
+            adTick(slot);
+        }
         applyPreferredQuality(players[slot]);   // QUALIDADE: sempre a
                                                 // melhor disponível
                                                 // (modo floor: 1080p)
@@ -1349,10 +2170,46 @@ function onErrorEvt(slot) {
         if (iv) failedIds.add(iv.id);
         return;
     }
+    // v16 — falha do player NATIVO (reserva Piped): a causa mais provável
+    // é a INSTÂNCIA (em baixo/extracção degradada), NÃO o vídeo — o
+    // YouTube ainda o pode servir perfeitamente. 1.ª falha em carga →
+    // reciclagem ao YouTube (o ciclo de detecção recomeça); sem orçamento
+    // ou já em reprodução → ciclo de falhas normal, MAS sem marcar
+    // failedIds (o vídeo nunca provou estar morto — apenas o motor)
+    const np = players[slot];
+    if (np && np.__native) {
+        if (slotState[slot] === 'loading' && !nativeRecycled[slot] &&
+            swapAttempts[slot] < 2 && zenOn && activeOption) {
+            nativeRecycled[slot] = true;
+            swapAttempts[slot]++;
+            recycleNativeToYT(slot);
+            return;
+        }
+        slotState[slot] = 'error';
+        handleVideoFailure(slot);
+        return;
+    }
     // Evento obsoleto de um slot já parado/tapado (troca concluída ou
     // desactivação) → ignorar: revivê-lo provocaria um reveal indevido
     // do slot morto por cima do vídeo actual
     if (slot !== activeSlot && slotState[slot] === 'stopped') return;
+    // v16 — ERRO do player YT durante a CARGA (embed bloqueado, bot-wall
+    // do YouTube — ex.: erros 101/150 — o padrão clássico SEM adblock):
+    // ANTES de dar o vídeo como morto, tentar a reserva sem anúncios (o
+    // Piped serve o MESMO vídeo por stream directo, sem embed); se a
+    // reserva também não o puder servir, segue o ciclo de falhas de
+    // sempre (failedIds + handleVideoFailure, como até hoje).
+    if (zenOn && activeOption && slotState[slot] === 'loading' &&
+        swapAttempts[slot] < 2) {
+        trySwitchToNative(slot, 'error', 0).then(function(ok) {
+            if (ok) return;
+            const vv = slotVideo[slot];
+            if (vv) failedIds.add(vv.id);
+            slotState[slot] = 'error';
+            handleVideoFailure(slot);
+        });
+        return;
+    }
     const v = slotVideo[slot];
     if (v) failedIds.add(v.id);   // indisponível → não voltar a escolher
     slotState[slot] = 'error';
@@ -1463,6 +2320,8 @@ function deactivateZen() {
     queueIdx = 0;             // próxima activação volta a embaralhar
     clearRevealTimer('A');
     clearRevealTimer('B');
+    stopAdWatch('A');   // v16: a vigilância anti-anúncios morre com a sessão
+    stopAdWatch('B');
     clearApiWatchdog();   // desligou durante a carga da API → cancelar a
                           // rede de segurança (dupla protecção: o watchdog
                           // também verifica !zenOn)
@@ -1886,7 +2745,12 @@ let checkLabels = {
     apiFail:      'Could not load the YouTube API — check the connection.',
     noVideos:     'No videos to check.',
     warn:         'YouTube unreachable? Check network/adblock — every video failed.',
-    timeoutReason:'No response within 15s'
+    timeoutReason:'No response within 15s',
+    // v16 — sonda da reserva anti-anúncios (Piped) para vídeos que falham
+    // no YouTube (o site continua a poder reproduzi-los sem anúncios)
+    fbProbing:    'Checking the ad-free fallback...',
+    fbOk:         'Ad-free fallback: available',
+    fbDown:       'Ad-free fallback: unavailable'
 };
 function checkFill(key, n, total) {
     return checkLabels[key].replace('{n}', n).replace('{total}', total);
@@ -2036,27 +2900,67 @@ function runCheckPool(tasks) {
     pump();
 }
 
+// v16 — SONDA DA RESERVA ANTI-ANÚNCIOS (Piped) para os vídeos que FALHARAM
+// no YouTube: metadados (duração real) + range-GET de 2 bytes no stream
+// escolhido (confirma CORS + 206 na instância). 4 em paralelo — o check
+// principal já acabou, isto é um bónus rápido que diz ao Quintas se o
+// site AINDA reproduz esses vídeos (o motor troca sozinho para a reserva
+// quando o YouTube serve anúncio/bloqueia — ver MOTOR DE RESERVA, acima).
+function probeFallbackFor(failed) {
+    if (!failed.length) return Promise.resolve();
+    if (checkStatus) checkStatus.textContent = checkLabels.fbProbing;
+    return new Promise(function(resolve) {
+        let i = 0, active = 0;
+        function next() {
+            while (active < 4 && i < failed.length) {
+                const r = failed[i++];
+                active++;
+                pipedFetchVideo(r.id).then(function(info) {
+                    if (info && info.pick) {
+                        return pipedProbeStream(info.pick.videoUrl).then(function(okStream) {
+                            r.fb = okStream ? 'ok' : 'down';
+                            r.fbDetail = info.pick.detail + ' · ' + info.base.replace('https://', '');
+                        });
+                    }
+                    r.fb = info ? 'no-streams' : 'down';   // instância respondeu sem extracção / nem respondeu
+                    return null;
+                }).then(function() {
+                    active--; next();
+                }, function() {
+                    active--; next();
+                });
+            }
+            if (!active && i >= failed.length) resolve();
+        }
+        next();
+    });
+}
+
 function finishCheck(results, host) {
     if (host && host.parentNode) host.parentNode.removeChild(host);
-    setCheckDone();
     const failed = results.filter(function(r) { return r.status !== 'ok'; });
 
     if (!failed.length) {
+        setCheckDone();
         if (checkStatus) checkStatus.textContent =
             checkFill('allOk', results.length, 0);
         if (checkList) checkList.innerHTML = '';
         return;
     }
 
-    // Relatório .txt organizado + download automático
-    const allFailed = failed.length === results.length;
-    const txt = buildCheckReport(results, failed, allFailed);
-    lastCheckReport = txt;
-    downloadTextFile('hub-videos-offline-' + reportStamp() + '.txt', txt);
+    // v16 — sonda da reserva ANTES de fechar: os resultados (overlay +
+    // relatório .txt) ficam completos num só passo
+    probeFallbackFor(failed).then(function() {
+        setCheckDone();
+        const allFailed = failed.length === results.length;
+        const txt = buildCheckReport(results, failed, allFailed);
+        lastCheckReport = txt;
+        downloadTextFile('hub-videos-offline-' + reportStamp() + '.txt', txt);
 
-    if (checkStatus) checkStatus.textContent =
-        checkFill('problems', failed.length, results.length);
-    renderCheckList(results, allFailed);
+        if (checkStatus) checkStatus.textContent =
+            checkFill('problems', failed.length, results.length);
+        renderCheckList(results, allFailed);
+    });
 }
 
 function reportStamp() {
@@ -2085,6 +2989,19 @@ function buildCheckReport(results, failed, allFailed) {
         L.push(' YouTube API was unreachable (network blocked, adblock or');
         L.push(' offline) rather than every video being gone.');
     }
+    // v16 — estado da reserva anti-anúncios (detecção de anúncios + troca
+    // automática para o Piped — ver MOTOR DE RESERVA no zen-video.js)
+    L.push('');
+    L.push(' AD-FREE FALLBACK ENGINE (Piped)');
+    L.push(' ------------------------------------------------------------');
+    L.push(' Session stats : ' + fallbackStats.adHits + ' ad detections · ' +
+          (fallbackStats.adSwitches + fallbackStats.stallSwitches) + ' switches · ' +
+          fallbackStats.ytFallbacks + ' YouTube recoveries · ' +
+          fallbackStats.switchFails + ' failed switches');
+    L.push(' Instance     : ' + (pipedHealthy || '(none proven this session)'));
+    if (Date.now() < pipedCooldownUntil) {
+        L.push(' Status       : cooldown until ' + new Date(pipedCooldownUntil).toLocaleTimeString());
+    }
     ZEN_OPTIONS.forEach(function(opt) {
         const catResults = results.filter(function(r) { return r.cat === opt.name; });
         const bad = catResults.filter(function(r) { return r.status !== 'ok'; });
@@ -2101,6 +3018,14 @@ function buildCheckReport(results, failed, allFailed) {
             } else {
                 L.push('           Reason: ' +
                        (YT_ERR_TEXT[r.code] || ('player error ' + r.code)));
+            }
+            // v16 — a reserva consegue ainda servir este vídeo?
+            if (r.fb === 'ok') {
+                L.push('           Fallback: AVAILABLE (' + r.fbDetail + ')');
+            } else if (r.fb === 'down') {
+                L.push('           Fallback: unavailable (Piped unreachable)');
+            } else if (r.fb === 'no-streams') {
+                L.push('           Fallback: instance answered but stream extraction is degraded');
             }
         });
     });
@@ -2134,11 +3059,23 @@ function renderCheckList(results, allFailed) {
             const reason = r.status === 'timeout'
                 ? checkLabels.timeoutReason
                 : (YT_ERR_TEXT[r.code] || ('player error ' + r.code));
+            // v16 — marcador da reserva anti-anúncios: diz se o site
+            // continua a conseguir reproduzir o vídeo sem anúncios
+            let fb = '';
+            if (r.fb === 'ok') {
+                fb = '<span class="zen-check-fb ok">' +
+                     escapeHtml(checkLabels.fbOk + (r.fbDetail ? ' — ' + r.fbDetail : '')) +
+                     '</span>';
+            } else if (r.fb === 'down' || r.fb === 'no-streams') {
+                fb = '<span class="zen-check-fb down">' +
+                     escapeHtml(checkLabels.fbDown) + '</span>';
+            }
             return '<div class="zen-check-item">' +
                 '<span class="zen-check-cat">' + escapeHtml(r.cat) + '</span>' +
                 '<span class="zen-check-link">' +
                     escapeHtml(r.title || ('https://youtu.be/' + r.id)) + '</span>' +
                 '<span class="zen-check-reason">' + escapeHtml(reason) + '</span>' +
+                fb +
                 '</div>';
         }).join('');
     checkList.innerHTML =
@@ -2212,6 +3149,9 @@ window._zenSyncLang = function(t) {
     if (t.zenCheckNoVideos)    checkLabels.noVideos      = t.zenCheckNoVideos;
     if (t.zenCheckWarn)        checkLabels.warn          = t.zenCheckWarn;
     if (t.zenCheckNoResponse)  checkLabels.timeoutReason = t.zenCheckNoResponse;
+    if (t.zenCheckFbProbing)   checkLabels.fbProbing     = t.zenCheckFbProbing;
+    if (t.zenCheckFbOk)        checkLabels.fbOk          = t.zenCheckFbOk;
+    if (t.zenCheckFbDown)      checkLabels.fbDown        = t.zenCheckFbDown;
     if (checkTitleEl) checkTitleEl.textContent = checkLabels.title;
     if (checkClose && !checkRunning) checkClose.textContent = checkLabels.close;
     updateZenBtnTitle();
@@ -2639,7 +3579,31 @@ window._zenCtrl = {
     },
     // ── VERIFICAÇÃO DE VÍDEOS (v10) ──
     verifyVideos: runVideoCheck,
-    lastCheckReport: function() { return lastCheckReport; }
+    lastCheckReport: function() { return lastCheckReport; },
+    // ── RESERVA ANTI-ANÚNCIOS (v16) — introspecção/debug/consola ──
+    fallback: function() {
+        return {
+            engine: 'piped',
+            api: pipedHealthy,
+            cooldownMs: Math.max(0, pipedCooldownUntil - Date.now()),
+            stats: JSON.parse(JSON.stringify(fallbackStats)),
+            cacheSize: pipedCache.size,
+            adWatch: {
+                A: adWatch.A ? adWatch.A.phase : null,
+                B: adWatch.B ? adWatch.B.phase : null
+            },
+            swapAttempts: { A: swapAttempts.A, B: swapAttempts.B },
+            nativeSlots: {
+                A: !!(players.A && players.A.__native),
+                B: !!(players.B && players.B.__native)
+            }
+        };
+    },
+    // debug/testes: força a troca do slot (ou do activo) para o player
+    // nativo da reserva — o mesmo caminho que a detecção de anúncios usa
+    forceNative: function(slot) {
+        return trySwitchToNative(slot || activeSlot, 'ad', 0);
+    }
 };
 
 })();
