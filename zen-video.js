@@ -345,6 +345,20 @@ const API_LOAD_TIMEOUT = 20000; // Rede de segurança da API do YouTube:
                              // terceiros, que o localhost normalmente não
                              // aplica; 12s estava a disparar falsos
                              // positivos nesse cenário.)
+const STALL_CHECK_MS = 6000; // 1ª fase do timer do slot (ver armSlotTimer,
+                             // abaixo): se o player não der NENHUM sinal
+                             // de vida (nem onReady nem qualquer
+                             // onStateChange) neste tempo, está quase de
+                             // certeza BLOQUEADO — não apenas lento — e
+                             // falha-se já. É ISTO que reduz o delay a
+                             // sério: quando o problema é sistémico
+                             // (bloqueio, não rede lenta), 5 tentativas
+                             // custam ~5×6s em vez de 5×SLOT_TIMEOUT_MS.
+const SLOT_TIMEOUT_MS = 25000; // 2ª fase: só se chega aqui quando o player
+                             // JÁ deu sinal de vida (está mesmo a
+                             // carregar/bufferizar) mas ainda não tocou —
+                             // aí sim vale a pena dar-lhe o tempo todo,
+                             // porque é rede lenta a sério.
 
 // ═══ POLÍTICA DE ÁUDIO POR BROWSER (compatibilidade Firefox) ═══
 // O Firefox é rígido onde o Chromium é tolerante: desmutar PROGRA-
@@ -554,8 +568,13 @@ let   preload  = null;                  // PRÉ-CARGA: { slot, video, option,
 const slotVideo = { A: null, B: null };  // vídeo carregado em cada slot
 const slotState = { A: 'empty', B: 'empty' };
 const slotTimers = { A: null, B: null };
+const slotSawSignal = { A: false, B: false }; // ficou true ao 1º sinal de
+                                               // vida do player (onReady OU
+                                               // qualquer onStateChange)
+                                               // desde o início da carga
+                                               // actual — ver armSlotTimer
 const revealTimers = { A: null, B: null };  // timers do pré-roll (PRE_ROLL_MS)
-let apiWatchdog = null;                     // API do YT não chega? (12s)
+let apiWatchdog = null;                     // API do YT não chega? (20s)
 let activeSlot = 'A';
 let consecutiveErrors = 0;
 const failedIds = new Set();  // vídeos indisponíveis nesta sessão
@@ -808,6 +827,7 @@ function createPlayer(slot, video, idle) {
         events: {
             onReady: function() {
                 pReady[slot] = true;
+                slotSawSignal[slot] = true;   // 1º sinal de vida (ver armSlotTimer)
                 if (preload && preload.slot === slot) preload.ready = true;
                 killCaptions(p);        // legendas desmontadas desde o arranque
                 ensureIframeAllow(p);   // delegação de autoplay (Firefox)
@@ -884,20 +904,27 @@ function loadVideoInto(slot, video) {
     armSlotTimer(slot);
 }
 
-// Rede de segurança: se em 25s não estiver a tocar, tratar como falha.
-// (Subido de 14s: em produção o handshake inicial do player YouTube —
-// cookies de terceiros, negociação de armazenamento particionado — é
-// bem mais lento do que no servidor local, onde muitos browsers isentam
-// localhost dessas proteções. Com 14s, vídeos que iam começar a tocar
-// normalmente (só que mais devagar) eram marcados como "falhados" antes
-// de terem sequer hipótese, o que consumia o ciclo de >5 erros e por
-// vezes desligava o zen por completo sem nenhum vídeo estar realmente
-// indisponível.)
+// Rede de segurança EM DUAS FASES (ver STALL_CHECK_MS / SLOT_TIMEOUT_MS
+// acima) — desenhada para reduzir o delay a sério, não só tolerá-lo:
+//   1) aos STALL_CHECK_MS: sem NENHUM sinal de vida do player → falha já
+//      (cobre o caso de bloqueio silencioso — vários vídeos presos
+//      seguidos, sem nunca disparar um erro explícito do YouTube — que
+//      era o que estava a causar os "1 a 2 minutos" de delay);
+//   2) só quando HOUVE sinal de vida → dá-se o resto do tempo até
+//      SLOT_TIMEOUT_MS (rede lenta a bufferizar, não bloqueio).
 function armSlotTimer(slot) {
     clearSlotTimer(slot);
+    slotSawSignal[slot] = false;
     slotTimers[slot] = setTimeout(function() {
-        if (slotState[slot] === 'loading') handleVideoFailure(slot);
-    }, 25000);
+        if (slotState[slot] !== 'loading') return;
+        if (!slotSawSignal[slot]) {
+            handleVideoFailure(slot);   // zero sinal → falha rápida
+            return;
+        }
+        slotTimers[slot] = setTimeout(function() {
+            if (slotState[slot] === 'loading') handleVideoFailure(slot);
+        }, SLOT_TIMEOUT_MS - STALL_CHECK_MS);
+    }, STALL_CHECK_MS);
 }
 function clearSlotTimer(slot) {
     if (slotTimers[slot]) { clearTimeout(slotTimers[slot]); slotTimers[slot] = null; }
@@ -1009,6 +1036,11 @@ function onState(slot, state) {
     // evento seu é irrelevante (erros do idle são tratados à parte no
     // onErrorEvt; as legendas já foram desmontadas no seu onReady)
     if (slotState[slot] === 'idle') return;
+    slotSawSignal[slot] = true;   // qualquer evento real = player vivo
+                                   // (ver armSlotTimer) — cobre também o
+                                   // caso de loadVideoById num player já
+                                   // existente, cujo onReady já disparou
+                                   // há muito nesta sessão
     // Legendas: o YT pode (re)montar o módulo de captions a cada vídeo
     // → desmontá-lo em cada estado relevante (antes de qualquer reveal)
     if (state === YT_BUFFERING || state === YT_PLAYING) {
