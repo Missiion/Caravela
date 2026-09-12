@@ -330,14 +330,21 @@ const PRE_ROLL_MS   = 3500;  // ANTI-UI: tempo fixo que o vídeo novo passa
                              // requestEngage) e durante o qual a roda do
                              // ícone gira (spinWheel/stopWheel).
                              // Ajustável se necessário.
-const API_LOAD_TIMEOUT = 12000; // Rede de segurança da API do YouTube:
+const API_LOAD_TIMEOUT = 20000; // Rede de segurança da API do YouTube:
                              // se o script iframe_api não carregar DE TODO
                              // (rede cortada / bloqueador), o callback do
                              // loadYTApi nunca corre — sem isto a roda
                              // (agora em loop infinito) giraria ETERNAMENTE
-                             // e o zen ficaria "ligado" sem vídeo. Aos 12s
+                             // e o zen ficaria "ligado" sem vídeo. Aos 20s
                              // desliga limpo (fade + roda parada), como o
-                             // ciclo de >5 erros de vídeo.
+                             // ciclo de >5 erros de vídeo. (Subido de 12s:
+                             // em produção — domínio público real, fora do
+                             // servidor local — o handshake do iframe do
+                             // YouTube fica sujeito a Enhanced Tracking
+                             // Prevention / bloqueio de cookies de
+                             // terceiros, que o localhost normalmente não
+                             // aplica; 12s estava a disparar falsos
+                             // positivos nesse cenário.)
 
 // ═══ POLÍTICA DE ÁUDIO POR BROWSER (compatibilidade Firefox) ═══
 // O Firefox é rígido onde o Chromium é tolerante: desmutar PROGRA-
@@ -877,12 +884,20 @@ function loadVideoInto(slot, video) {
     armSlotTimer(slot);
 }
 
-// Rede de segurança: se em 14s não estiver a tocar, tratar como falha
+// Rede de segurança: se em 25s não estiver a tocar, tratar como falha.
+// (Subido de 14s: em produção o handshake inicial do player YouTube —
+// cookies de terceiros, negociação de armazenamento particionado — é
+// bem mais lento do que no servidor local, onde muitos browsers isentam
+// localhost dessas proteções. Com 14s, vídeos que iam começar a tocar
+// normalmente (só que mais devagar) eram marcados como "falhados" antes
+// de terem sequer hipótese, o que consumia o ciclo de >5 erros e por
+// vezes desligava o zen por completo sem nenhum vídeo estar realmente
+// indisponível.)
 function armSlotTimer(slot) {
     clearSlotTimer(slot);
     slotTimers[slot] = setTimeout(function() {
         if (slotState[slot] === 'loading') handleVideoFailure(slot);
-    }, 14000);
+    }, 25000);
 }
 function clearSlotTimer(slot) {
     if (slotTimers[slot]) { clearTimeout(slotTimers[slot]); slotTimers[slot] = null; }
