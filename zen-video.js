@@ -139,20 +139,16 @@
      clique é reencaminhado para o moonBtn original (main.js: tema,
      estrelas, cometas, localStorage) e o estado activo espelha a
      classe night-mode do body.
-   • Som do vídeo (v14 — IGUAL em todos os browsers, ver STRICT_AUDIO no
-     código): LIGADO por defeito, entra com FADE-IN suave (0 → volume,
-     ~2s na 1.ª activação). Isto já foi POLÍTICA POR BROWSER: o Firefox
-     arrancava sempre mudo, porque desmutar programaticamente FORA de um
-     gesto faz o Firefox PAUSAR o vídeo a meio ("o vídeo fica parado no
-     Firefox") — e a activação antiga nascia de um scroll no carrossel,
-     sem clique nenhum. Desde que a activação passou a exigir um CLIQUE
-     de confirmação (ver "SELECÇÃO EM DOIS PASSOS"), esse clique É o
-     gesto que falta: o pedido de som corre SÍNCRONO dentro dele (mesma
-     técnica do wantSound em switchVideo/loadVideoInto), por isso deixou
-     de ser preciso mutar o Firefox à partida. Se o browser mesmo assim
-     bloquear o unmute programático, o 1.º gesto seguinte (clique/tecla/
-     scroll) retoma o áudio com o mesmo fade. Espírito do resto do hub:
-     tudo por gesto.
+   • Som do vídeo (POLÍTICA POR BROWSER — ver STRICT_AUDIO no código):
+     browsers Chromium → LIGADO por defeito, entra com FADE-IN suave
+     (0 → volume, ~2s na 1.ª activação); se o browser bloquear o
+     unmute programático, o 1.º gesto (clique/tecla/scroll) retoma o
+     áudio com o mesmo fade. Browsers Firefox → o som arranca SEMPRE
+     mudo: o Firefox PAUSA o vídeo quando um autoplay muted é desmutado
+     programaticamente fora de um gesto (era exactamente o bug "o vídeo
+     fica parado no Firefox") — lá, o som liga apenas pelo BOTÃO DE SOM
+     (clique directo, síncrono — sempre aceite) ou pelo 1.º gesto se o
+     som já estava pedido. Espírito do resto do hub: tudo por gesto.
      HINT DE SOM (Firefox): enquanto o utilizador NUNCA tiver clicado no
      botão de som/mute (marca PERSISTENTE em localStorage — sobrevive a
      refreshes), o ícone PULSA suavemente em VERMELHO sempre que fica
@@ -171,11 +167,9 @@
      chamada para depois do onReady (a cadeia assíncrona download da
      API → criação do iframe → handshake) perde a ligação ao gesto — o
      motivo nº 1 de "o vídeo fica parado" no Firefox;
-     (3) STRICT_AUDIO (v14): já não muda o DEFAULT do som — só continua
-     a decidir COMO o som liga: nunca por um unMute() tardio/assíncrono
-     fora de gesto (isso é que pausaria o vídeo), sempre por um pedido
-     síncrono dentro de um clique real (activação ou troca) — ver
-     wantSound em loadVideoInto/createPlayer/becomeActive.
+     (3) STRICT_AUDIO: em browsers Firefox o áudio arranca mudo e só
+     liga por clique (a desmutar programática fora do gesto faria o
+     Firefox PAUSAR o vídeo a meio da revelação).
      Browsers Chromium: comportamento INALTERADO (e a 1.ª activação
      fica ainda mais rápida graças à pré-carga).
    • Cada switch REUTILIZA o iframe via loadVideoById (rápido).
@@ -571,17 +565,9 @@ let zenOn = false;            // modo zen activo (vídeo visível)
 let activeOption = null;      // opção em reprodução (null = fundo de imagem)
 let activeVideoId = null;     // id do vídeo em reprodução
 let selectedIdx = 0;          // opção seleccionada no carrossel (0 = default)
-let soundOn = true;           // som do vídeo — LIGADO por defeito em TODOS os
-                              // browsers (fade-in na revelação). Antes o
-                              // Firefox arrancava sempre MUDO (STRICT_AUDIO)
-                              // porque a activação nascia de um scroll sem
-                              // clique; agora a activação só acontece pelo
-                              // CLIQUE de confirmação no centro do carrossel
-                              // (ver zenBtn.addEventListener) — um gesto real,
-                              // igual ao que já permite o unMute() síncrono
-                              // nas trocas de vídeo (switchVideo/wantSound) —
-                              // por isso deixou de haver motivo para a
-                              // distinção por browser aqui.
+let soundOn = !STRICT_AUDIO;  // som do vídeo — Chromium: LIGADO (fade-in na
+                              // revelação, como sempre); Firefox: começa
+                              // MUDO e liga-se no botão de som (gesto)
 let volume = parseInt(volSlider.value, 10);
 if (isNaN(volume) || volume < 0) volume = 20;   // default: 20%
 let carouselOpen = false;
@@ -1064,19 +1050,12 @@ function randomVideoOf(opt) {
 function buildQueue(opt, firstVideo) {
     const pool = opt.videos.filter(function(v) { return !failedIds.has(v.id); });
     shuffleList(pool);
-    let startIdx = 0;
     if (firstVideo) {
         const i = pool.indexOf(firstVideo);
         if (i > 0) { const fv = pool.splice(i, 1)[0]; pool.unshift(fv); }
-        // firstVideo (hit da pré-carga) já está a ser exibido — a queue
-        // tem de começar a SEGUIR dele (posição 1). Sem isto, o 1.º avanço
-        // (botão de troca / _zenCtrl.next) serve de volta videoQueue[0],
-        // que é o MESMO vídeo já no ecrã — o utilizador via "nada mudar"
-        // no 1.º clique e só ao 2.º clique é que avançava de facto.
-        if (i >= 0) startIdx = 1;
     }
     videoQueue = pool;
-    queueIdx = startIdx;
+    queueIdx = 0;
 }
 
 // Serve o PRÓXIMO vídeo da queue, POR ORDEM: nunca repete um já
@@ -1441,13 +1420,7 @@ function activateOption(opt) {
         buildQueue(opt, video);
         if (!video) video = serveNextVideo();
         if (!video) { deactivateZen(); return; }
-        // v14: mesma lógica de "SOM NAS TROCAS" do switchVideo — este
-        // loadVideoInto ainda corre dentro do gesto síncrono do clique de
-        // confirmação (zenBtn), quer reutilize o player pré-carregado
-        // (unMute síncrono) quer tenha de criar um player novo (unMute no
-        // onReady de createPlayer — o mesmo caminho que o 1.º switchVideo
-        // da sessão já usa hoje, com sucesso, para o slot ainda sem player)
-        loadVideoInto(slot, video, soundOn);
+        loadVideoInto(slot, video);
     });
 }
 
@@ -1468,10 +1441,9 @@ function deactivateZen() {
                           // também verifica !zenOn)
     stopWheel();   // a roda pode estar a girar (espera interrompida) —
                    // sem isto continuaria infinitamente no carrossel
-    // Áudio: muta já (o vídeo vai parar) e repõe o DEFAULT — a próxima
-    // activação volta a começar com som LIGADO + fade-in, igual em
-    // todos os browsers (ver nota em "let soundOn" sobre o fim da
-    // distinção Firefox/Chromium).
+    // Áudio: muta já (o vídeo vai parar) e repõe o DEFAULT do BROWSER —
+    // a próxima activação volta a começar com som LIGADO + fade-in nos
+    // Chromium (como sempre) e MUDO nos Firefox (liga no botão).
     stopFadeAudio();
     // QUALIDADE: limpar as amostras desta sessão de reprodução (o modo
     // max/floor mantém-se — a rede não mudou por desligar o vídeo; a
@@ -1485,9 +1457,9 @@ function deactivateZen() {
         const p = players[s];
         if (p && p.mute) { try { p.mute(); } catch (e) {} }
     });
-    soundOn = true;
+    soundOn = !STRICT_AUDIO;
     audioStarted = false;
-    applySoundVisual(soundOn);   // visual coerente com o novo default (ligado)
+    applySoundVisual(soundOn);   // visual coerente com o default do browser
     disengageVideoMode();   // restaura hub + botões IMEDIATAMENTE
     updateZenBtn();
     updateAudioWrap();
@@ -2544,8 +2516,8 @@ zenBtn.addEventListener('click', function(e) {
 // ═════════════════════════════════════════════════════════════════
 // ARRANQUE
 // ═════════════════════════════════════════════════════════════════
-applySoundVisual(true);   // som LIGADO por defeito (fade-in ao activar),
-                          // igual em todos os browsers
+applySoundVisual(!STRICT_AUDIO);   // som: Chromium LIGADO (fade-in ao
+                                   // activar) · Firefox MUDO (botão)
 renderCarousel();
 updateZenBtnTitle();      // label inicial do botão (estado default)
 sizeCovers();
