@@ -1110,7 +1110,7 @@ function serveNextVideo() {
 }
 
 // ═════════════════════════════════════════════════════════════════
-// MOTOR DE RESERVA ANTI-ANÚNCIOS — PIPED (v16)
+// MOTOR DE RESERVA ANTI-ANÚNCIOS — PIPED + INVIDIOUS (v16 → v17)
 // ═════════════════════════════════════════════════════════════════
 // PROBLEMA (ver Historico.txt): com o adblock DESLIGADO, o YouTube
 // serve ANÚNCIOS no início (e às vezes a meio) dos vídeos de fundo —
@@ -1140,37 +1140,77 @@ function serveNextVideo() {
 //     vivem em ORIGENS DIFERENTES, pelo que a API responde com
 //     Access-Control-Allow-Origin: * e o proxy serve os streams com
 //     CORS + range requests (206) — verificado com testes reais.
-//   → ESCOLHA: Piped. Instabilidade relativa das instâncias (o
-//     YouTube bloqueia a extracção de formatos intermitentemente —
-//     os "PO tokens") é mitigada com ROTAÇÃO de instâncias
-//     (lista fixa + lista dinâmica oficial), cache e COOLDOWN; e o
-//     motor NUNCA piora o comportamento actual: se o Piped falhar,
-//     tudo cai nos caminhos do YouTube de sempre.
+//   → ESCOLHA (v16): Piped primário, com rotação de instâncias
+//     (lista fixa + lista dinâmica oficial), cache e cooldown.
+//
+// v17 — O TESTE REAL de 2026-09-12 (Firefox, servidor live, log do
+// utilizador na mão) provou que a mitigação v16 NÃO CHEGAVA:
+//   • TODAS as instâncias Piped públicas estavam simultaneamente
+//     caídas ou bloqueadas (kavin.rocks 502/525, reallyawso.me 502,
+//     ducks.party 500 «SignInConfirmNotBotException» — o YouTube
+//     bloqueia o IP do servidor da instância);
+//   • a rotação v16 era SEQUENCIAL (7s por instância): o orçamento
+//     esgotou-se em 2 instâncias mortas → «Ad-free fallback:
+//     unavailable» SEM as restantes sequer terem sido consultadas;
+//   • SEM ground truth da rede, a detecção de anúncio ficava CEGA
+//     (T1 sem expected) → o anúncio de 31s passou DEPOIS do
+//     pré-roll, visível (mudo) no ecrã;
+//   • o YouTube lança onError (2/5/150) DURANTE o anúncio de vídeos
+//     longos → o ramo 'playing' do onErrorEvt ia DIRECTO para
+//     failedIds + handleVideoFailure → o vídeo era SALTADO (o «após
+//     15s deu skip e outro começou») SEM a reserva sequer ter sido
+//     tentada.
+// v17 corrige os quatro pontos:
+//   • SONDAGEM PARALELA MULTI-FONTE: TODAS as instâncias (14 Piped
+//     + lista dinâmica + 8 Invidious) consultadas EM PARALELO — a
+//     resposta boa chega ao ritmo da melhor instância disponível;
+//     as mortas não custam nada (cache negativo por instância);
+//   • Invidious volta como 2.ª família (API pública reactivável;
+//     custo ~zero com cache negativo de 30min); streams SÓ proxied
+//     pela instância (os directos do googlevideo são IP-bound);
+//   • T1 LOCAL: o ground truth passa a existir SEM REDE — o trim
+//     (start/end) de cada vídeo define a duração mínima crível; um
+//     anúncio reporta 15-31s → detectado NO PRIMEIRO TICK (~700ms);
+//   • AD-WAIT: anúncio + reserva indisponível → MUDO imediato +
+//     reveal CANCELADO + espera-se o anúncio passar + re-tentativa
+//     da reserva cada 30s; o vídeo NUNCA é saltado por causa de um
+//     anúncio (tecto de 90s para o irreal);
+//   • onErrorEvt 'playing': tenta a reserva ANTES de falhar o vídeo
+//     (e não marca failedIds com anúncio em curso — o vídeo não tem
+//     culpa).
 //
 // ARQUITECTURA (pensada para TODAS as formas de interagir com os
 // vídeos — activação no carrossel, troca pelo botão de fundo, avanço
 // automático no ENDED, recuperação de falhas, pré-carga e verificador):
 //   • O YouTube continua a ser a fonte PRIMÁRIA de cada vídeo (como
 //     até hoje — é o arranque mais rápido quando não há anúncio).
-//   • Cada carga de vídeo lança em PARALELO uma PRÉ-BUSCA na API do
-//     Piped (metadados: duração real + streams). A duração real é o
-//     GROUND TRUTH da detecção de anúncios.
-//   • DETECÇÃO (3 camadas, todas invisíveis — o anúncio nunca chega
+//   • Cada carga de vídeo lança em PARALELO uma PRÉ-BUSCA nas fontes
+//     da reserva (v17: TODAS as instâncias em paralelo — metadados:
+//     duração real + streams). A duração real é o GROUND TRUTH da
+//     detecção de anúncios (quando a rede o fornece).
+//   • DETECÇÃO (4 camadas, todas invisíveis — o anúncio nunca chega
 //     a ser visto/ouvido, porque a troca acontece na fase muda e
 //     invisível do pré-roll):
-//       T1 — DURAÇÃO ≠ duração real (Piped): enquanto um anúncio
-//            toca, o getDuration() do IFrame API reporta a DURAÇÃO
-//            DO ANÚNCIO (o IFrame API não tem evento de anúncio —
-//            this é a heurística clássica; confirmação na issue
-//            oficial #143 do repositorio do widget). Detecta
-//            pré-roll E mid-roll (a duração reportada passa a ser a
-//            do anúncio em qualquer altura).
-//       T2 — SALTO de duração entre sondas (sem ground truth, quando
-//            o Piped não respondeu): a duração reportada MUDA a meio
-//            da reprodução → anúncio começou (ou acabou).
+//       T1 LOCAL (v17) — DURAÇÃO abaixo do mínimo crível do VÍDEO,
+//            deduzido do trim SEM rede nenhuma: o trecho [start..end]
+//            vive dentro do vídeo → a duração total ≥ end; um anúncio
+//            reporta 15-31s → detectado no PRIMEIRO TICK (~700ms),
+//            mesmo com TODAS as instâncias em baixo.
+//       T1 REDE — DURAÇÃO ≠ duração real (Piped/Invidious):
+//            enquanto um anúncio toca, o getDuration() do IFrame API
+//            reporta a DURAÇÃO DO ANÚNCIO (o IFrame API não tem
+//            evento de anúncio — esta é a heurística clássica;
+//            confirmação na issue oficial #143 do repositório do
+//            widget). Detecta pré-roll E mid-roll.
+//       T2 — SALTO de duração com DIRECÇÃO (v17): para BAIXO =
+//            anúncio COMEÇOU (mid-roll); para CIMA durante o
+//            ad-wait = anúncio ACABOU (retoma do fluxo).
 //       T3 — SEM SINAL: o player YT não deu sinal de vida em 6s
 //            (STALL_CHECK_MS) ou não chegou a PLAYING em 25s — o
 //            padrão exacto do bloqueio da maquinaria de anúncios.
+//       T4 — ERRO do player YT (onErrorEvt): em carga E em
+//            reprodução (v17 — este último era o gatilho do skip
+//            real de 2026-09-12) → sempre com tentativa de reserva.
 //   • TROCA INSTANTÂNEA: ao detectar, o slot troca o player YT por
 //     um PLAYER NATIVO (<video> — SEM iframe, SEM anúncios, SEM
 //     cookies, SEM UI) que implementa a MESMA interface do
@@ -1180,59 +1220,111 @@ function serveNextVideo() {
 //     fades de áudio, qualidade, loop silencioso, dock, olho…)
 //     continua a funcionar SEM ALTERAÇÕES. O vídeo retoma na última
 //     posição REAL conhecida (mid-roll) ou do início (pré-roll).
+//   • AD-WAIT (v17): anúncio + reserva indisponível → o player fica
+//     MUDO no instante da detecção, o reveal é CANCELADO (o anúncio
+//     nunca chega ao ecrã) e a vigilância espera o anúncio passar
+//     (a duração salta para o valor REAL); re-tentativa da reserva
+//     cada 30s durante a espera; tecto de 90s para o irreal. Quando
+//     o anúncio acaba: revelação/fade-in retomam pelo fluxo normal
+//     (pré-roll rearmado). No mid-roll (vídeo já revelado): o áudio
+//     volta pelo MESMO protocolo STRICT_AUDIO do becomeActive.
 //   • QUALIDADE: o player nativo escolhe o MELHOR par vídeo+áudio
-//     MP4/H.264 ≤1080p do Piped (modo «dual»: <video> mudo + <audio>
-//     sincronizado — dá 1080p, acima do máximo progressivo 720p;
-//     correcção de deriva a cada 400ms); fallback: stream muxed
-//     (vídeo+áudio num só MP4, 720p/360p); último recurso: HLS
-//     (Safari nativo). Tudo sem bibliotecas externas.
+//     MP4/H.264 ≤1080p da fonte (Piped/Invidious — modo «dual»:
+//     <video> mudo + <audio> sincronizado — dá 1080p, acima do
+//     máximo progressivo 720p; correcção de deriva a cada 400ms);
+//     fallback: stream muxed (vídeo+áudio num só MP4, 720p/360p);
+//     último recurso: HLS (Safari nativo). Tudo sem bibliotecas
+//     externas.
 //   • RESILIÊNCIA MÚTUA: slot que falha no NATIVO volta ao YouTube
 //     (1 reciclagem por carga); slot que falha/anuncia no YOUTUBE
 //     vai para o nativo (máx. 2 trocas por carga — nunca ping-pong
 //     infinito). Quando tudo falha, o ciclo de falhas de SEMPRE
 //     assume o controlo (consecutiveErrors → desactivar).
-//   • VERIFICADOR: o «Verify All Videos» ganhou uma sonda de reserva
-//     — cada vídeo que FALHA no YouTube é também testado via Piped
-//     (metadados + stream com range request), e o relatório/overlay
-//     mostram se o site o consegue ainda reproduzir sem anúncios.
+//   • VERIFICADOR: o «Verify All Videos» sonda a reserva multi-fonte
+//     para cada vídeo que FALHA no YouTube (metadados + canário
+//     <video> que prova o stream jogável — a MESMA via do motor),
+//     e o relatório/overlay mostram se o site o consegue ainda
+//     reproduzir sem anúncios.
 //   • Introspecção: window._zenCtrl.fallback() — estado do motor,
-//     instância activa, estatísticas de detecção/troca.
-// Nota honesta: as instâncias Piped são operadas pela comunidade —
-// a disponibilidade varia ao longo do dia. O motor roda com o que
-// existir e, quando nada existe, o website comporta-se EXACTAMENTE
-// como antes desta versão (zero regressões garantidas por desenho).
+//     fontes, instância activa, estatísticas de detecção/troca e
+//     fases do ad-watch (incluindo ad-waits em curso).
+// Nota honesta (v17): as instâncias Piped e Invidious são operadas
+// pela comunidade e o YouTube bloqueia-as em vagas (bot-walls/PO
+// tokens — ver o teste real de 2026-09-12). O motor agora conta com
+// sonda PARALELA de TODAS as fontes (a primeira viva responde em
+// segundos), detecção LOCAL que não depende de rede nenhuma e o
+// AD-WAIT — quando absolutamente nada responde, o anúncio passa MUDO
+// e INVISÍVEL (nunca audível, nunca salta o vídeo) e o fluxo retoma
+// sozinho no fim dele. O comportamento nunca é pior do que antes.
 const PIPED_CANDIDATES = [
     'https://pipedapi.ducks.party',       // verificada viva (API+proxy+CORS+range)
     'https://pipedapi.kavin.rocks',       // oficial do projecto
     'https://api.piped.private.coffee',
-    'https://pipedapi.reallyaweso.me',
+    'https://pipedapi.reallyawso.me',
     'https://api.piped.projectsegfau.lt',
-    'https://pipedapi.adminforge.de',
     'https://pipedapi.drgns.space',
-    'https://piped-api.lunar.icu'
+    'https://pipedapi.leptons.xyz',
+    'https://api.piped.yt',
+    'https://pipedapi.smnz.de',
+    'https://pipedapi.astartes.nl',
+    'https://pipedapi.phoenixthrush.com',
+    'https://pipedapi.orangenet.cc',
+    'https://pipedapi.nosebs.ru',
+    'https://pipedapi.r4fo.com'
+];
+// v17 — SEGUNDA FAMÍLIA DE FONTES (Invidious). A API pública está hoje
+// desligada na maioria das instâncias (403 «endpoint disabled» — ver
+// registo dos testes), MAS o ecossistema muda de semana para semana e
+// o custo de manter a camada é ~ZERO (cache negativo de 30min por
+// instância ≈ 2 tentativas/hora). O formato /api/v1/videos/{id} traz
+// lengthSeconds (ground truth!) + formatStreams/adaptiveFormats.
+// SÓ SÃO ACEITES streams PROXIED pela própria instância (ver
+// pickInvidiousStreams). A v17 CONSULTA AS DUAS FAMÍLIAS EM PARALELO —
+// nunca em série — e fica com a primeira resposta válida.
+const INV_CANDIDATES = [
+    'https://yewtu.be',
+    'https://inv.nadeko.net',
+    'https://invidious.nerdvpn.de',
+    'https://invidious.jing.rocks',
+    'https://iv.ggtyler.dev',
+    'https://invidious.f5.si',
+    'https://invidious.drgns.space',
+    'https://iv.duti.dev'
 ];
 const PIPED_LIST_URL    = 'https://piped-instances.kavin.rocks/'; // lista dinâmica oficial
 const PIPED_API_KEY     = 'zen_fallback_api';   // localStorage: instância saudável
-const PIPED_FETCH_MS    = 7000;   // timeout por instância (fetch do JSON)
-const PIPED_CACHE_MS    = 30 * 60000;   // cache de metadados/streams por vídeo
-const PIPED_FAIL_MS     = 5 * 60000;    // cache negativo (instâncias indisponíveis)
-const PIPED_COOLDOWN_MS = 5 * 60000;    // tudo falhou → pausa do motor
+const PIPED_FETCH_MS    = 5000;   // timeout por instância (v17: era 7 — em paralelo 5 chega)
+const PIPED_CACHE_MS    = 30 * 60000;   // cache POSITIVO de metadados/streams por vídeo
+const VIDEO_FAIL_MS     = 60 * 1000;    // v17: cache negativo por VÍDEO (era 5min)
+const INST_FAIL_MS      = 60 * 1000;    // v17: cache negativo por INSTÂNCIA Piped
+const INV_FAIL_MS       = 30 * 60000;   // v17: cache negativo por instância Invidious
 const AD_POLL_MS        = 700;    // cadência da sonda de duração (anúncios)
 const AD_TOLERANCE      = 5;      // segundos de tolerância na comparação
+const AD_WAIT_MAX_MS    = 90 * 1000;  // v17: tecto da espera muda de um anúncio
+const AD_RETRY_MS       = 30 * 1000;  // v17: re-tentativa da reserva durante a espera
+const AD_SHORT_DUR      = 90;     // v17: sem trim/expected, durações ≤90s = anúncio
+                                      // (os vídeos zen duram todos ≥ minutos)
 
-let pipedHealthy = null;         // base URL da instância saudável (persistida)
+let pipedHealthy = null;         // base URL da última fonte que funcionou (persistida)
 try { pipedHealthy = localStorage.getItem(PIPED_API_KEY) || null; } catch (e) {}
 let pipedDynamicList = [];       // instâncias descobertas na lista dinâmica
 let pipedListAt = 0;
-let pipedCooldownUntil = 0;
-let pipedPreconnected = false;
+const instFail = new Map();      // v17: base → timestamp da última falha
 const pipedCache = new Map();    // videoId → info normalizada
 const pipedInflight = new Map(); // videoId → promise (single-flight)
 const fallbackStats = {
     fetches: 0, okFetches: 0, fetchFails: 0,
     adHits: 0, adSwitches: 0, stallSwitches: 0, errorSwitches: 0,
+    adWaits: 0, adWaitsRecovered: 0,
     switchFails: 0, ytFallbacks: 0
 };
+// v17 — instância em cache negativo? (ttl por família: instâncias que
+// acabaram de falhar ficam FORA da vaga seguinte — o paralelismo não
+// gasta fetches com quem acabou de dizer «não»)
+function instAvailable(base, ttl) {
+    const t = instFail.get(base);
+    return !t || (Date.now() - t) > ttl;
+}
 
 // fetch JSON com timeout (AbortController) — nunca lança fora do catch
 function pipedTimedJSON(url, ms) {
@@ -1256,25 +1348,29 @@ function pipedTimedJSON(url, ms) {
     });
 }
 
-// HEAD-less probe de stream (range GET de 2 bytes — confirma CORS+206)
-function pipedProbeStream(url) {
+// v17 — CANÁRIO DE STREAM: em vez do range-GET por fetch (que exige
+// CORS no servidor), o teste usa a MESMA via do motor — um <video>
+// real com preload=metadata (elementos de media NÃO precisam de CORS
+// para carregar): «loadedmetadata» = o stream responde e é jogável;
+// erro/timeout = instância ou stream em baixo. Vale para Piped E para
+// Invidious e prova EXACTAMENTE o que a reprodução vai pedir.
+function videoCanary(url, ms) {
     return new Promise(function(resolve) {
         let done = false;
-        const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        const t = setTimeout(function() {
+        let t = null;
+        const v = document.createElement('video');
+        const finish = function(ok) {
             if (done) return; done = true;
-            if (ctl) { try { ctl.abort(); } catch (e) {} }
-            resolve(false);
-        }, PIPED_FETCH_MS);
-        fetch(url, ctl ? { signal: ctl.signal, headers: { Range: 'bytes=0-1' } }
-                       : { headers: { Range: 'bytes=0-1' } })
-        .then(function(r) {
-            if (done) return; done = true; clearTimeout(t);
-            resolve(r.status === 206 || r.status === 200);
-            try { if (r.body && r.body.cancel) r.body.cancel(); } catch (e) {}
-        }, function() {
-            if (done) return; done = true; clearTimeout(t); resolve(false);
-        });
+            if (t) clearTimeout(t);
+            try { v.removeAttribute('src'); v.load(); } catch (e) {}
+            resolve(ok);
+        };
+        v.preload = 'metadata';
+        v.muted = true;
+        v.addEventListener('loadedmetadata', function() { finish(true); });
+        v.addEventListener('error', function() { finish(false); });
+        t = setTimeout(function() { finish(false); }, ms || 6500);
+        v.src = url;
     });
 }
 
@@ -1312,6 +1408,15 @@ function markPipedHealthy(base) {
     if (pipedHealthy === base) return;
     pipedHealthy = base;
     try { localStorage.setItem(PIPED_API_KEY, base); } catch (e) {}
+    // v17 — preconnect dinâmico à fonte vencedora: o DNS/TLS fica
+    // quente para as próximas vagas (o índex.html traz o estático à
+    // 1.ª candidata; isto cobre a instância que efectivamente respondeu)
+    try {
+        const pc = document.createElement('link');
+        pc.rel = 'preconnect';
+        pc.href = base;
+        document.head.appendChild(pc);
+    } catch (e) {}
 }
 
 // ═══ SELECÇÃO DE STREAMS (a melhor qualidade jogável, sem MSE) ═══
@@ -1397,65 +1502,183 @@ function normalizePiped(j, base, videoId) {
     };
 }
 
-async function pipedFetchVideoCore(videoId) {
-    const cached = pipedCache.get(videoId);
-    if (cached &&
-        ((cached.ok && Date.now() - cached.at < PIPED_CACHE_MS) ||
-         (!cached.ok && Date.now() - cached.at < PIPED_FAIL_MS))) {
-        return cached.ok ? cached : null;
+// ═══ INVIDIOUS (v17 — 2.ª família de fontes) ═══
+// /api/v1/videos/{id} → lengthSeconds (ground truth) + formatStreams
+// (muxed progressivo) + adaptiveFormats (vídeo/áudio separados) +
+// hlsUrl. Só URLs PROXIED pela própria instância servem: os directos
+// do googlevideo.com são vinculados ao IP do SERVIDOR da instância e
+// falham sempre (403) no browser do visitante — nunca os aceitar.
+// A normalização produz o MESMO formato do Piped → o NativePlayer,
+// o trySwitchToNative e o verificador funcionam SEM alterações.
+function invHeight(f) {
+    if (typeof f.resolution === 'string') {
+        const m = /(\d{3,4})/.exec(f.resolution);
+        if (m) return parseInt(m[1], 10);
     }
-    if (Date.now() < pipedCooldownUntil) return (cached && cached.ok) ? cached : null;
-    fallbackStats.fetches++;
+    const m2 = /(\d{3,4})p/.exec(String(f.qualityLabel || f.quality || ''));
+    return m2 ? parseInt(m2[1], 10) : 0;
+}
+function pickInvidiousStreams(j, base) {
+    try {
+        const proxied = function(u) { return typeof u === 'string' && u.indexOf(base + '/') === 0; };
+        const fs = Array.isArray(j.formatStreams) ? j.formatStreams : [];
+        const af = Array.isArray(j.adaptiveFormats) ? j.adaptiveFormats : [];
+        const muxed = fs.filter(function(f) {
+            return proxied(f.url) && String(f.type || '').indexOf('video/mp4') === 0;
+        }).sort(function(a, b) { return invHeight(b) - invHeight(a); });
+        const vo = af.filter(function(f) {
+            return proxied(f.url) && String(f.type || '').indexOf('video/mp4') === 0 &&
+                   invHeight(f) > 0 && invHeight(f) <= 1080;
+        }).sort(function(a, b) {
+            return (invHeight(b) - invHeight(a)) || ((b.bitrate || 0) - (a.bitrate || 0));
+        });
+        const aud = af.filter(function(f) {
+            return proxied(f.url) && String(f.type || '').indexOf('audio/mp4') === 0;
+        }).sort(function(a, b) { return (b.bitrate || 0) - (a.bitrate || 0); });
 
-    const tryBases = async function(bases) {
-        let sawInfo = null;   // 200 com JSON válido (mesmo sem streams → ground truth)
-        for (const base of bases) {
-            try {
-                const j = await pipedTimedJSON(base + '/streams/' + videoId, PIPED_FETCH_MS);
-                if (!j || typeof j.duration !== 'number' || !Array.isArray(j.videoStreams)) continue;
-                const info = normalizePiped(j, base, videoId);
-                sawInfo = info;
-                if (info.pick) {   // streams jogáveis → sucesso pleno
-                    pipedCache.set(videoId, info);
-                    markPipedHealthy(base);
-                    fallbackStats.okFetches++;
-                    return info;
-                }
-                // 200 mas extracção degradada (sem streams) → continua à procura
-            } catch (e) {}
+        if (vo.length && aud.length) {
+            const h = invHeight(vo[0]);
+            return {
+                mode: 'dual', videoUrl: vo[0].url, audioUrl: aud[0].url,
+                height: h, qualityLabel: qualityToYTLabel(h),
+                muxedUrl: muxed.length ? muxed[0].url : null,   // degradação dual→muxed
+                detail: (h ? h + 'p' : 'video') + ' + ' + (aud[0].qualityLabel || 'audio')
+            };
         }
-        return sawInfo;
-    };
-
-    let info = await tryBases(pipedTryBases().slice(0, 4));
-    if (!info || !info.pick) {
-        const refreshed = await pipedRefreshList();   // 1 refresh por 10 min
-        if (refreshed) {
-            const first = pipedTryBases().slice(0, 4);
-            const extra = pipedTryBases().filter(function(b) { return first.indexOf(b) < 0; }).slice(0, 2);
-            if (extra.length) {
-                const info2 = await tryBases(extra);
-                if (info2 && info2.pick) info = info2;
-                else if (info2 && !info) info = info2;
-            }
+        if (muxed.length) {
+            const h = invHeight(muxed[0]);
+            return {
+                mode: 'muxed', videoUrl: muxed[0].url, audioUrl: null,
+                height: h, qualityLabel: qualityToYTLabel(h),
+                detail: muxed[0].qualityLabel || (h ? h + 'p' : 'unknown')
+            };
         }
-    }
-    if (info) {
-        pipedCache.set(videoId, info);   // metadados servem de ground truth
-        return info;
-    }
-    pipedCache.set(videoId, { ok: false, at: Date.now() });
-    pipedCooldownUntil = Date.now() + PIPED_COOLDOWN_MS;
-    fallbackStats.fetchFails++;
+        if (typeof j.hlsUrl === 'string' && j.hlsUrl.indexOf(base + '/') === 0) {
+            const test = document.createElement('video').canPlayType('application/vnd.apple.mpegurl');
+            if (test) return {
+                mode: 'hls', videoUrl: j.hlsUrl, audioUrl: null,
+                height: 0, qualityLabel: 'auto', detail: 'HLS'
+            };
+        }
+    } catch (e) {}
     return null;
 }
+function normalizeInvidious(j, base, videoId) {
+    let thumb = '';
+    if (Array.isArray(j.videoThumbnails) && j.videoThumbnails.length &&
+        typeof j.videoThumbnails[0].url === 'string') {
+        thumb = j.videoThumbnails[0].url;
+    }
+    return {
+        ok: true, at: Date.now(), base: base, videoId: videoId,
+        duration: j.lengthSeconds,
+        title: typeof j.title === 'string' ? j.title : '',
+        thumbnail: thumb,
+        hls: (typeof j.hlsUrl === 'string' && j.hlsUrl.indexOf(base + '/') === 0) ? j.hlsUrl : null,
+        pick: pickInvidiousStreams(j, base)
+    };
+}
 
-// single-flight: chamadas paralelas do MESMO vídeo partilham a promise
-function pipedFetchVideo(videoId) {
+// ═══ NÚCLEO v17 — SONDA PARALELA MULTI-FONTE ═══
+// Dispara TODAS as instâncias (Piped + lista dinâmica + Invidious) EM
+// PARALELO e fica com a PRIMEIRA resposta que traga streams jogáveis;
+// se nenhuma trouxer, guarda a primeira com METADADOS (a duração real
+// continua a servir de ground truth à detecção de anúncios — vale para
+// as duas famílias). A v16 tentava as instâncias EM SÉRIE (7s cada):
+// no teste real de 2026-09-12 o orçamento esgotou-se após 2 instâncias
+// mortas (kavin 502 + reallyawso 502) e a reserva foi dada como
+// «unavailable» SEM as restantes terem sido consultadas. Em paralelo,
+// a resposta boa chega ao ritmo da MELHOR instância disponível e as
+// mortas não custam nada (cache negativo por instância).
+function firstSuccess(factories, wantFull) {
+    return new Promise(function(resolve) {
+        let pending = factories.length, settled = false, meta = null;
+        if (!pending) { resolve(null); return; }
+        factories.forEach(function(f) {
+            Promise.resolve().then(f).then(function(res) {
+                pending--;
+                if (settled) return;
+                if (res && wantFull(res)) { settled = true; resolve(res); return; }
+                if (res && !meta) meta = res;        // melhores metadados até agora
+                if (!pending) resolve(meta);          // todas terminaram
+            }, function() {
+                pending--;
+                if (settled) return;
+                if (!pending) resolve(meta);
+            });
+        });
+    });
+}
+
+async function fetchVideoUnified(videoId, opts) {
+    const o = opts || {};
+    fallbackStats.fetches++;
+    // fire-and-forget (1 por 10 min): a lista dinâmica entra na PRÓXIMA vaga
+    try { pipedRefreshList(); } catch (e) {}
+    const tasks = [];
+    // família Piped (fixas + dinâmicas) — /streams/{id}
+    pipedTryBases().forEach(function(base) {
+        if (INV_CANDIDATES.indexOf(base) >= 0) return;   // base Invidious persistida (localStorage) — entra pela família certa, com o path certo
+        if (!o.refreshAll && !instAvailable(base, INST_FAIL_MS)) return;
+        tasks.push(function() {
+            return pipedTimedJSON(base + '/streams/' + videoId, PIPED_FETCH_MS)
+            .then(function(j) {
+                if (!j || typeof j.duration !== 'number' || !Array.isArray(j.videoStreams)) {
+                    instFail.set(base, Date.now());
+                    return null;
+                }
+                const info = normalizePiped(j, base, videoId);
+                // 200 mas extracção degradada (bot-wall/PO tokens) →
+                // arrefecer a instância para a vaga seguinte
+                if (!info.pick) instFail.set(base, Date.now());
+                return info;
+            }, function() { instFail.set(base, Date.now()); return null; });
+        });
+    });
+    // família Invidious — /api/v1/videos/{id}
+    INV_CANDIDATES.forEach(function(base) {
+        if (!instAvailable(base, INV_FAIL_MS)) return;
+        tasks.push(function() {
+            return pipedTimedJSON(base + '/api/v1/videos/' + videoId, PIPED_FETCH_MS)
+            .then(function(j) {
+                if (!j || j.error || typeof j.lengthSeconds !== 'number' || j.lengthSeconds <= 0) {
+                    instFail.set(base, Date.now());
+                    return null;
+                }
+                return normalizeInvidious(j, base, videoId);
+            }, function() { instFail.set(base, Date.now()); return null; });
+        });
+    });
+    const info = await firstSuccess(tasks, function(x) { return !!(x && x.pick); });
+    if (info && info.pick) {
+        fallbackStats.okFetches++;
+        markPipedHealthy(info.base);
+    }
+    return info || null;
+}
+
+// single-flight + caches: positivo 30min por vídeo, negativo 60s por
+// vídeo, 60s (Piped) / 30min (Invidious) por instância. Opções:
+// {refresh:true} ignora o cache do VÍDEO (re-tentativas do ad-wait e
+// das trocas); {refreshAll:true} ignora também o cache negativo das
+// instâncias. Promessas em voo são SEMPRE partilhadas — nunca há duas
+// vagas simultâneas do mesmo vídeo.
+function pipedFetchVideo(videoId, opts) {
     if (pipedInflight.has(videoId)) return pipedInflight.get(videoId);
-    const pr = pipedFetchVideoCore(videoId).then(function(info) {
+    const o = opts || {};
+    if (!o.refresh) {
+        const cached = pipedCache.get(videoId);
+        if (cached) {
+            if (cached.ok && Date.now() - cached.at < PIPED_CACHE_MS) return Promise.resolve(cached);
+            if (!cached.ok && Date.now() - cached.at < VIDEO_FAIL_MS) return Promise.resolve(null);
+        }
+    }
+    const pr = fetchVideoUnified(videoId, o).then(function(info) {
         pipedInflight.delete(videoId);
-        return info;
+        if (info) { pipedCache.set(videoId, info); return info; }
+        pipedCache.set(videoId, { ok: false, at: Date.now() });
+        fallbackStats.fetchFails++;
+        return null;
     }, function() {
         pipedInflight.delete(videoId);
         return null;
@@ -1641,7 +1864,7 @@ class NativePlayer {
         if (this._dead) return;
         this._dead = true;
         this._tickStop();
-        try { console.log('[zen] reserva Piped falhou (' + reason + ')'); } catch (e) {}
+        try { console.log('[zen] reserva (Piped/Invidious) falhou (' + reason + ')'); } catch (e) {}
         onErrorEvt(this.slot);   // o ramo nativo do onErrorEvt decide o destino
     }
 
@@ -1716,7 +1939,11 @@ class NativePlayer {
         return this.videoEl.currentTime || 0;
     }
     getVideoData() {
-        return { title: this.title, video_id: this.videoId, author: 'Piped' };
+        return {
+            title: this.title, video_id: this.videoId,
+            author: (this._info && this._info.base) ?
+                    this._info.base.replace('https://', '') : 'fallback'
+        };
     }
     getIframe() { return null; }   // ensureIframeAllow faz guard
     unloadModule() {}              // killCaptions faz guard
@@ -1747,14 +1974,31 @@ class NativePlayer {
 // anúncio, o IFrame API reporta a DURAÇÃO DO ANÚNCIO (não existe
 // evento oficial de anúncio no IFrame API — ver docs + issue #143;
 // a comparação com a duração REAL do vídeo é o ground truth clássico).
-const adWatch = { A: null, B: null };   // {phase, expected, lastDur, lastRealTime, poll, busy}
+const adWatch = { A: null, B: null };   // {phase, expected, localMin, lastDur, lastRealTime, poll, busy, waitStart, retryAt}
 const swapAttempts  = { A: 0, B: 0 };   // orçamento de trocas YT↔nativo POR CARGA (máx 2)
 const nativeRecycled = { A: false, B: false }; // 1 reciclagem nativo→YT por carga
 
+// v17 — duração mínima crível do vídeo REAL, deduzida LOCALMENTE do
+// trim (sem rede nenhuma): o trecho [start..end] vive dentro do vídeo
+// → o vídeo completo dura PELO MENOS `end`; sem end, um start alto
+// prova um vídeo longo; sem nada, resta a regra dos anúncios curtos
+// (AD_SHORT_DUR). Enquanto um anúncio toca, o getDuration() reporta a
+// DURAÇÃO DO ANÚNCIO (15-31s típicos) → qualquer valor muito abaixo
+// deste mínimo é ANÚNCIO, detectado NO PRIMEIRO TICK (~700ms), mesmo
+// com TODAS as instâncias da reserva em baixo. Isto foi exactamente o
+// que faltou no teste real de 2026-09-12 (anúncio de 31s num trim de
+// 1571s com o Piped todo em baixo → a detecção ficou CEGA).
+function adLocalMin(video) {
+    if (!video) return 0;
+    if (typeof video.end === 'number' && video.end > 0) return video.end;
+    if (typeof video.start === 'number' && video.start > 30) return video.start + 30;
+    return 0;
+}
 function startAdWatch(slot) {
     stopAdWatch(slot);
-    const w = { phase: 'watch', expected: null, lastDur: 0, lastRealTime: 0,
-                busy: false, poll: null };
+    const w = { phase: 'watch', expected: null, localMin: 0, lastDur: 0, lastRealTime: 0,
+                busy: false, waitStart: 0, retryAt: 0, poll: null };
+    w.localMin = adLocalMin(slotVideo[slot]);
     w.poll = setInterval(function() { adTick(slot); }, AD_POLL_MS);
     adWatch[slot] = w;
 }
@@ -1777,37 +2021,149 @@ function adTick(slot) {
     try { d = p.getDuration() || 0; t = p.getCurrentTime() || 0; } catch (e) { return; }
     if (!(d > 0)) return;
 
-    // ground truth (duração real) — da pré-busca Piped, se já chegou
+    // ground truth de rede (Piped OU Invidious) quando existir
     if (w.expected == null) {
         const v = slotVideo[slot];
         const c = v ? pipedCache.get(v.id) : null;
         if (c && c.ok && typeof c.duration === 'number' && c.duration > 0) w.expected = c.duration;
     }
-    const mismatch = (w.expected != null) && Math.abs(d - w.expected) > AD_TOLERANCE;
-    const jump = w.lastDur > 0 && Math.abs(d - w.lastDur) > AD_TOLERANCE;
 
-    if (mismatch || jump) {
-        // ── ANÚNCIO DETECTADO ── a duração reportada é a do ANÚNCIO (ou
-        // saltou ao entrar/sair de um): troca IMEDIATA de motor, retomando
-        // na última posição REAL conhecida do vídeo (pré-roll: 0/início).
-        w.busy = true;
-        w.phase = 'ad';
-        fallbackStats.adHits++;
-        const resumeAt = w.lastRealTime;
-        trySwitchToNative(slot, 'ad', resumeAt).then(function(ok) {
-            if (ok) { stopAdWatch(slot); return; }
-            // troca falhou (Piped em baixo) → repor os marcos para não
-            // redisparar a cada sonda; a vigilância continua (T2/T3)
-            w.busy = false;
-            w.expected = null;
-            w.lastDur = d;
-        });
+    // ── AD-WAIT (v17): anúncio confirmado com a reserva indisponível ──
+    // o player está MUDO desde o instante da detecção e o vídeo NÃO se
+    // revela; espera-se o anúncio passar (a duração reportada SALTA
+    // para o valor real) — o utilizador nunca vê nem ouve o anúncio e
+    // o vídeo NUNCA é saltado por causa dele (a falha anterior).
+    if (w.phase === 'wait') {
+        if (d > w.lastDur + AD_TOLERANCE) {
+            // a duração saltou para CIMA: o anúncio acabou — retomar
+            recoverFromAdWait(slot, w, d, t);
+            return;
+        }
+        if (Math.abs(d - w.lastDur) > AD_TOLERANCE) w.lastDur = d;   // novo anúncio em cadeia (raro)
+        adWaitTick(slot, w);
         return;
     }
-    // duração coerente → amostra limpa: memoriza a posição REAL
+
+    const mismatch = (w.expected != null) && Math.abs(d - w.expected) > AD_TOLERANCE;
+    // v17 — T1 LOCAL: duração reportada abaixo do mínimo crível do vídeo
+    const floorDur = w.localMin > 0 ? (w.localMin - AD_TOLERANCE) : AD_SHORT_DUR;
+    const localAd  = d < floorDur;
+    // v17 — T2 com DIRECÇÃO: salto para BAIXO = anúncio COMEÇOU
+    // (mid-roll); o salto para cima em clean trata-se abaixo (metadados
+    // reais que chegaram tarde / fim de um anúncio escapado)
+    const drop = w.lastDur > 0 && d < w.lastDur - AD_TOLERANCE;
+
+    if (mismatch || localAd || drop) {
+        handleAdDetected(slot, w, d);
+        return;
+    }
+    if (w.lastDur > 0 && d > w.lastDur + AD_TOLERANCE) {
+        // salto para cima em amostra limpa: aceitar como a duração real
+        // (fim de um anúncio que escapou à detecção, ou metadados tardios)
+        w.expected = d;
+    }
+    // duração coerente → amostra LIMPA: memoriza a posição REAL (v17:
+    // só em amostras limpas — durante anúncios o getCurrentTime é o do
+    // ANÚNCIO e nunca deve poluir o resumeAt da troca)
     w.lastRealTime = t;
     w.lastDur = d;
     w.phase = 'clean';
+}
+
+// ── ANÚNCIO DETECTADO (T1 local / T1 rede / T2 descida) ── silêncio
+// IMEDIATO (o anúncio nunca se ouve), reveal pendente CANCELADO (nunca
+// se vê) e uma vaga NOVA da reserva em paralelo; se a reserva falhar,
+// entra em ad-wait — o vídeo não se perde.
+function handleAdDetected(slot, w, d) {
+    w.busy = true;
+    w.phase = 'ad';
+    fallbackStats.adHits++;
+    const p = players[slot];
+    try { p.mute(); } catch (e) {}
+    if (!coverEl(slot).classList.contains('visible')) clearRevealTimer(slot);
+    const resumeAt = w.lastRealTime || 0;   // só amostras limpas alimentam isto
+    try {
+        console.log('[zen] anúncio detectado (' +
+            (w.expected != null ? 'duração ≠ real' : 'duração curta') +
+            ') — a tentar a reserva sem anúncios…');
+    } catch (e) {}
+    trySwitchToNative(slot, 'ad', resumeAt).then(function(ok) {
+        if (ok) { stopAdWatch(slot); return; }
+        enterAdWait(slot, w, d);
+    });
+}
+
+function enterAdWait(slot, w, d) {
+    w.busy = false;
+    w.phase = 'wait';
+    w.waitStart = Date.now();
+    w.retryAt = Date.now() + AD_RETRY_MS;
+    w.lastDur = d;    // duração do anúncio — o marco do salto de fim
+    fallbackStats.adWaits++;
+    try { console.log('[zen] reserva indisponível — a aguardar (mudo) o fim do anúncio…'); } catch (e) {}
+}
+
+function adWaitTick(slot, w) {
+    // re-tentativa periódica: a disponibilidade das instâncias muda ao
+    // minuto — se alguma entretanto responder, TROCA-SE na mesma (no
+    // meio do anúncio: quem ganha é o utilizador)
+    if (Date.now() >= w.retryAt) {
+        w.retryAt = Date.now() + AD_RETRY_MS;
+        const v = slotVideo[slot];
+        if (v && v.id) {
+            pipedFetchVideo(v.id, { refresh: true, refreshAll: true }).then(function(info) {
+                if (!info || !info.pick) return;
+                const wNow = adWatch[slot];
+                if (wNow !== w || w.phase !== 'wait' || w.busy) return;
+                trySwitchToNative(slot, 'ad', w.lastRealTime || 0).then(function(ok) {
+                    if (ok) stopAdWatch(slot);
+                });
+            });
+        }
+    }
+    // tecto de segurança: 90s de anúncio ininterrupto não é real →
+    // ciclo de falhas (SEM failedIds — o vídeo não tem culpa do
+    // anúncio; regressa na próxima volta da queue)
+    if (Date.now() - w.waitStart > AD_WAIT_MAX_MS) {
+        stopAdWatch(slot);
+        try { console.log('[zen] anúncio demasiado longo — a avançar para o próximo vídeo'); } catch (e) {}
+        handleVideoFailure(slot);
+    }
+}
+
+function recoverFromAdWait(slot, w, d, t) {
+    w.phase = 'clean';
+    w.expected = d;      // a duração REAL acabou de revelar-se
+    w.lastDur = d;
+    w.lastRealTime = t;
+    fallbackStats.adWaitsRecovered++;
+    try { console.log('[zen] anúncio terminado — a retomar o vídeo'); } catch (e) {}
+    if (coverEl(slot).classList.contains('visible')) {
+        // mid-roll: o vídeo JÁ estava revelado — devolver o áudio pelo
+        // MESMO protocolo do becomeActive (STRICT_AUDIO: nunca um
+        // unMute() tardio fora de gesto — o 1.º clique/tecla do
+        // utilizador liga o som com fade, como em toda a v14)
+        const p = players[slot];
+        if (p && soundOn) {
+            try {
+                if (!STRICT_AUDIO) { p.setVolume(0); p.unMute(); fadeInAudio(p, FADE_SWAP_MS); }
+                else if (p.isMuted && !p.isMuted()) { p.setVolume(0); fadeInAudio(p, FADE_SWAP_MS); }
+                else p.mute();
+            } catch (e) {}
+        }
+    } else {
+        // pré-roll: a revelação é REARMADA — exactamente o fluxo do
+        // PLAYING original (pré-roll 3,5s → crossfade + fade-in)
+        clearRevealTimer(slot);
+        revealTimers[slot] = setTimeout(function() {
+            revealTimers[slot] = null;
+            if (!zenOn) return;
+            if (slotState[slot] !== 'playing') return;
+            const aw = adWatch[slot];
+            if (aw && aw.phase === 'wait') return;   // novo anúncio entretanto?!
+            becomeActive(slot);
+        }, PRE_ROLL_MS);
+    }
 }
 
 // ═══ A TROCA (o coração do sistema) ═══
@@ -1821,7 +2177,10 @@ async function trySwitchToNative(slot, reason, resumeAt) {
     const video = slotVideo[slot];
     if (!video || !video.id) return false;
 
-    const info = await pipedFetchVideo(video.id);
+    // v17 — refresh: a pré-busca pode ter falhado há instantes (cache
+    // negativo de 60s) — as trocas merecem uma vaga NOVA em paralelo
+    // (partilhada por single-flight se já houver uma em voo)
+    const info = await pipedFetchVideo(video.id, { refresh: true });
     // revalidação: o estado pode ter mudado durante a busca (desligar,
     // troca rápida por cima, reciclagem, o YT recuperou a bom tempo…)
     if (!zenOn || !activeOption) return false;
@@ -1958,14 +2317,23 @@ function onState(slot, state) {
             // crossfade em si mantém-se idêntica — só o MOMENTO em que
             // arranca é que é adiado.
             clearRevealTimer(slot);
-            revealTimers[slot] = setTimeout(function() {
-                revealTimers[slot] = null;
-                // Revalidar: o estado pode ter mudado durante a espera
-                // (desactivação, vídeo substituído por cima, erro, etc.)
-                if (!zenOn) return;
-                if (slotState[slot] !== 'playing') return;
-                becomeActive(slot);
-            }, PRE_ROLL_MS);
+            // v17 — anúncio já detectado (a sonda IMEDIATA do PLAYING
+            // correu antes disto, síncrona): a revelação fica RETIDA —
+            // o fim do anúncio (recoverFromAdWait) rearma-a; o anúncio
+            // nunca chega ao ecrã
+            const aw = adWatch[slot];
+            if (!aw || aw.phase === 'clean' || aw.phase === 'watch') {
+                revealTimers[slot] = setTimeout(function() {
+                    revealTimers[slot] = null;
+                    // Revalidar: o estado pode ter mudado durante a espera
+                    // (desactivação, vídeo substituído por cima, erro, etc.)
+                    if (!zenOn) return;
+                    if (slotState[slot] !== 'playing') return;
+                    const aw2 = adWatch[slot];
+                    if (aw2 && aw2.phase === 'wait') return;   // anúncio em curso
+                    becomeActive(slot);
+                }, PRE_ROLL_MS);
+            }
         }
     } else if (state === YT_ENDED) {
         slotState[slot] = 'ended';
@@ -2205,6 +2573,32 @@ function onErrorEvt(slot) {
             if (ok) return;
             const vv = slotVideo[slot];
             if (vv) failedIds.add(vv.id);
+            slotState[slot] = 'error';
+            handleVideoFailure(slot);
+        });
+        return;
+    }
+    // v17 — erro do player YT com o vídeo JÁ ACTIVO ('playing'): o caso
+    // real do relatório de 2026-09-12 — o YouTube lança onError (2/5/150)
+    // no MEIO do anúncio em vídeos longos, e o ramo anterior seguia
+    // DIRECTO para failedIds + handleVideoFailure: o vídeo era saltado
+    // SEM a reserva sequer ter sido tentada (era o «deu skip» observado
+    // no Firefox). ANTES de falhar: tentar a reserva, retomando na
+    // última posição REAL conhecida. Só se ela também não o servir
+    // segue o ciclo de falhas de sempre.
+    if (zenOn && activeOption && swapAttempts[slot] < 2) {
+        const aw = adWatch[slot];
+        const resume = (aw && aw.phase === 'clean') ? (aw.lastRealTime || 0) : 0;
+        trySwitchToNative(slot, 'error', resume).then(function(ok) {
+            if (ok) return;
+            const vv = slotVideo[slot];
+            // anúncio em curso no momento do erro → o VÍDEO não tem
+            // culpa (o erro é da maquinaria de anúncios): não marcar
+            // failedIds — ele regressa na próxima volta da queue
+            if (!aw || (aw.phase !== 'wait' && aw.phase !== 'ad')) {
+                if (vv) failedIds.add(vv.id);
+            }
+            stopAdWatch(slot);
             slotState[slot] = 'error';
             handleVideoFailure(slot);
         });
@@ -2917,7 +3311,9 @@ function probeFallbackFor(failed) {
                 active++;
                 pipedFetchVideo(r.id).then(function(info) {
                     if (info && info.pick) {
-                        return pipedProbeStream(info.pick.videoUrl).then(function(okStream) {
+                        // v17 — canário <video> (a MESMA via do motor, sem
+                        // exigir CORS): prova que o stream é mesmo jogável
+                        return videoCanary(info.pick.videoUrl, 6500).then(function(okStream) {
                             r.fb = okStream ? 'ok' : 'down';
                             r.fbDetail = info.pick.detail + ' · ' + info.base.replace('https://', '');
                         });
@@ -2992,16 +3388,17 @@ function buildCheckReport(results, failed, allFailed) {
     // v16 — estado da reserva anti-anúncios (detecção de anúncios + troca
     // automática para o Piped — ver MOTOR DE RESERVA no zen-video.js)
     L.push('');
-    L.push(' AD-FREE FALLBACK ENGINE (Piped)');
+    L.push(' AD-FREE FALLBACK ENGINE (Piped + Invidious, parallel)');
     L.push(' ------------------------------------------------------------');
     L.push(' Session stats : ' + fallbackStats.adHits + ' ad detections · ' +
-          (fallbackStats.adSwitches + fallbackStats.stallSwitches) + ' switches · ' +
+          (fallbackStats.adSwitches + fallbackStats.stallSwitches + fallbackStats.errorSwitches) + ' switches · ' +
+          fallbackStats.adWaits + ' ads muted-through (all sources down) · ' +
+          fallbackStats.adWaitsRecovered + ' recoveries after wait · ' +
           fallbackStats.ytFallbacks + ' YouTube recoveries · ' +
           fallbackStats.switchFails + ' failed switches');
+    L.push(' Sources      : ' + (PIPED_CANDIDATES.length + pipedDynamicList.length) +
+          ' Piped + ' + INV_CANDIDATES.length + ' Invidious (queried in parallel)');
     L.push(' Instance     : ' + (pipedHealthy || '(none proven this session)'));
-    if (Date.now() < pipedCooldownUntil) {
-        L.push(' Status       : cooldown until ' + new Date(pipedCooldownUntil).toLocaleTimeString());
-    }
     ZEN_OPTIONS.forEach(function(opt) {
         const catResults = results.filter(function(r) { return r.cat === opt.name; });
         const bad = catResults.filter(function(r) { return r.status !== 'ok'; });
@@ -3580,17 +3977,25 @@ window._zenCtrl = {
     // ── VERIFICAÇÃO DE VÍDEOS (v10) ──
     verifyVideos: runVideoCheck,
     lastCheckReport: function() { return lastCheckReport; },
-    // ── RESERVA ANTI-ANÚNCIOS (v16) — introspecção/debug/consola ──
+    // ── RESERVA ANTI-ANÚNCIOS (v16/v17) — introspecção/debug/consola ──
     fallback: function() {
+        const phaseOf = function(w) {
+            if (!w) return null;
+            if (w.phase === 'wait') {
+                return 'wait (' + Math.max(0, AD_WAIT_MAX_MS - (Date.now() - w.waitStart)) + 'ms left)';
+            }
+            return w.phase;
+        };
         return {
-            engine: 'piped',
+            engine: 'piped+invidious (parallel)',
             api: pipedHealthy,
-            cooldownMs: Math.max(0, pipedCooldownUntil - Date.now()),
+            sources: (PIPED_CANDIDATES.length + pipedDynamicList.length) + ' piped + ' +
+                     INV_CANDIDATES.length + ' invidious',
             stats: JSON.parse(JSON.stringify(fallbackStats)),
             cacheSize: pipedCache.size,
             adWatch: {
-                A: adWatch.A ? adWatch.A.phase : null,
-                B: adWatch.B ? adWatch.B.phase : null
+                A: phaseOf(adWatch.A),
+                B: phaseOf(adWatch.B)
             },
             swapAttempts: { A: swapAttempts.A, B: swapAttempts.B },
             nativeSlots: {
