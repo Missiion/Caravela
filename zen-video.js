@@ -1146,7 +1146,7 @@ function serveNextVideo() {
 // v17 — O TESTE REAL de 2026-09-12 (Firefox, servidor live, log do
 // utilizador na mão) provou que a mitigação v16 NÃO CHEGAVA:
 //   • TODAS as instâncias Piped públicas estavam simultaneamente
-//     caídas ou bloqueadas (kavin.rocks 502/525, reallyawso.me 502,
+//     caídas ou bloqueadas (kavin.rocks 502/525, reallyaweso.me 502,
 //     ducks.party 500 «SignInConfirmNotBotException» — o YouTube
 //     bloqueia o IP do servidor da instância);
 //   • a rotação v16 era SEQUENCIAL (7s por instância): o orçamento
@@ -1260,7 +1260,7 @@ const PIPED_CANDIDATES = [
     'https://pipedapi.ducks.party',       // verificada viva (API+proxy+CORS+range)
     'https://pipedapi.kavin.rocks',       // oficial do projecto
     'https://api.piped.private.coffee',
-    'https://pipedapi.reallyawso.me',
+    'https://pipedapi.reallyaweso.me',
     'https://api.piped.projectsegfau.lt',
     'https://pipedapi.drgns.space',
     'https://pipedapi.leptons.xyz',
@@ -1586,7 +1586,7 @@ function normalizeInvidious(j, base, videoId) {
 // continua a servir de ground truth à detecção de anúncios — vale para
 // as duas famílias). A v16 tentava as instâncias EM SÉRIE (7s cada):
 // no teste real de 2026-09-12 o orçamento esgotou-se após 2 instâncias
-// mortas (kavin 502 + reallyawso 502) e a reserva foi dada como
+// mortas (kavin 502 + reallyaweso 502) e a reserva foi dada como
 // «unavailable» SEM as restantes terem sido consultadas. Em paralelo,
 // a resposta boa chega ao ritmo da MELHOR instância disponível e as
 // mortas não custam nada (cache negativo por instância).
