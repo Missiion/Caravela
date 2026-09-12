@@ -16,14 +16,30 @@
      visíveis — o SELECCIONADO (centro = o próprio botão, com zoom) e
      o SUPERIOR (próxima opção, 40px acima):
      – scroll ↓  → o carrossel é puxado para baixo e a opção de CIMA
-       fica seleccionada no centro (mudança de fundo em tempo real)
+       fica seleccionada no centro (v12: PRÉ-VISUALIZAÇÃO apenas — ver
+       "SELECÇÃO EM DOIS PASSOS" abaixo; já não muda o vídeo)
      – scroll ↑  → inverso
-     – clique na opção superior → selecciona-a directamente
+     – clique na opção superior → selecciona-a directamente (mesma
+       pré-visualização do scroll — também não activa nada)
      – hover na opção superior → highlight
      – o CENTRO não é clicável (pointer-events:none): os cliques vão
-       ao BOTÃO (toggle liga/desliga)
-   • Selecção em tempo real: opção funcional → activa o vídeo; opção
-     default (ou placeholder sem vídeos) → website normal.
+       ao BOTÃO por baixo — é ESSE clique que CONFIRMA a selecção e
+       activa o vídeo (ver "SELECÇÃO EM DOIS PASSOS" abaixo)
+   • SELECÇÃO EM DOIS PASSOS (v12 — motivo: o Firefox só concede
+     "activação do utilizador" a gestos como o clique, NUNCA a wheel/
+     scroll; era por isso que o pedido de reprodução falhava
+     especificamente no Firefox quando a selecção pelo carrossel
+     activava logo o vídeo — o comando partia de um evento que o
+     Firefox não reconhece como gesto válido). Agora: scroll/clique
+     num item do carrossel SÓ move a selecção — nenhum comando de
+     vídeo é emitido (selectOption já não chama activateOption/
+     deactivateZen); a activação exige sempre um SEGUNDO gesto — um
+     CLIQUE na opção JÁ seleccionada (cai no botão, como sempre, e o
+     activateOption desse handler corre SÍNCRONO dentro do clique).
+     Fechar o carrossel (mouse sai) sem esse clique de confirmação
+     repõe a selecção na opção REALMENTE activa (o vídeo a tocar, se
+     houver; a opção default, se não houver nada a tocar) — ver
+     closeCarousel().
    • Fecho do carrossel (mouse sai, período de graça de 320ms — o dobro
      do anterior, para um fecho mais confortável):
      – com vídeo activo → MODO VÍDEO (body.zen-video-mode): o Main Hub
