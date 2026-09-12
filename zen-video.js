@@ -16,30 +16,14 @@
      visíveis — o SELECCIONADO (centro = o próprio botão, com zoom) e
      o SUPERIOR (próxima opção, 40px acima):
      – scroll ↓  → o carrossel é puxado para baixo e a opção de CIMA
-       fica seleccionada no centro (v12: PRÉ-VISUALIZAÇÃO apenas — ver
-       "SELECÇÃO EM DOIS PASSOS" abaixo; já não muda o vídeo)
+       fica seleccionada no centro (mudança de fundo em tempo real)
      – scroll ↑  → inverso
-     – clique na opção superior → selecciona-a directamente (mesma
-       pré-visualização do scroll — também não activa nada)
+     – clique na opção superior → selecciona-a directamente
      – hover na opção superior → highlight
      – o CENTRO não é clicável (pointer-events:none): os cliques vão
-       ao BOTÃO por baixo — é ESSE clique que CONFIRMA a selecção e
-       activa o vídeo (ver "SELECÇÃO EM DOIS PASSOS" abaixo)
-   • SELECÇÃO EM DOIS PASSOS (v12 — motivo: o Firefox só concede
-     "activação do utilizador" a gestos como o clique, NUNCA a wheel/
-     scroll; era por isso que o pedido de reprodução falhava
-     especificamente no Firefox quando a selecção pelo carrossel
-     activava logo o vídeo — o comando partia de um evento que o
-     Firefox não reconhece como gesto válido). Agora: scroll/clique
-     num item do carrossel SÓ move a selecção — nenhum comando de
-     vídeo é emitido (selectOption já não chama activateOption/
-     deactivateZen); a activação exige sempre um SEGUNDO gesto — um
-     CLIQUE na opção JÁ seleccionada (cai no botão, como sempre, e o
-     activateOption desse handler corre SÍNCRONO dentro do clique).
-     Fechar o carrossel (mouse sai) sem esse clique de confirmação
-     repõe a selecção na opção REALMENTE activa (o vídeo a tocar, se
-     houver; a opção default, se não houver nada a tocar) — ver
-     closeCarousel().
+       ao BOTÃO (toggle liga/desliga)
+   • Selecção em tempo real: opção funcional → activa o vídeo; opção
+     default (ou placeholder sem vídeos) → website normal.
    • Fecho do carrossel (mouse sai, período de graça de 320ms — o dobro
      do anterior, para um fecho mais confortável):
      – com vídeo activo → MODO VÍDEO (body.zen-video-mode): o Main Hub
@@ -346,35 +330,14 @@ const PRE_ROLL_MS   = 3500;  // ANTI-UI: tempo fixo que o vídeo novo passa
                              // requestEngage) e durante o qual a roda do
                              // ícone gira (spinWheel/stopWheel).
                              // Ajustável se necessário.
-const API_LOAD_TIMEOUT = 20000; // Rede de segurança da API do YouTube:
+const API_LOAD_TIMEOUT = 12000; // Rede de segurança da API do YouTube:
                              // se o script iframe_api não carregar DE TODO
                              // (rede cortada / bloqueador), o callback do
                              // loadYTApi nunca corre — sem isto a roda
                              // (agora em loop infinito) giraria ETERNAMENTE
-                             // e o zen ficaria "ligado" sem vídeo. Aos 20s
+                             // e o zen ficaria "ligado" sem vídeo. Aos 12s
                              // desliga limpo (fade + roda parada), como o
-                             // ciclo de >5 erros de vídeo. (Subido de 12s:
-                             // em produção — domínio público real, fora do
-                             // servidor local — o handshake do iframe do
-                             // YouTube fica sujeito a Enhanced Tracking
-                             // Prevention / bloqueio de cookies de
-                             // terceiros, que o localhost normalmente não
-                             // aplica; 12s estava a disparar falsos
-                             // positivos nesse cenário.)
-const STALL_CHECK_MS = 6000; // 1ª fase do timer do slot (ver armSlotTimer,
-                             // abaixo): se o player não der NENHUM sinal
-                             // de vida (nem onReady nem qualquer
-                             // onStateChange) neste tempo, está quase de
-                             // certeza BLOQUEADO — não apenas lento — e
-                             // falha-se já. É ISTO que reduz o delay a
-                             // sério: quando o problema é sistémico
-                             // (bloqueio, não rede lenta), 5 tentativas
-                             // custam ~5×6s em vez de 5×SLOT_TIMEOUT_MS.
-const SLOT_TIMEOUT_MS = 25000; // 2ª fase: só se chega aqui quando o player
-                             // JÁ deu sinal de vida (está mesmo a
-                             // carregar/bufferizar) mas ainda não tocou —
-                             // aí sim vale a pena dar-lhe o tempo todo,
-                             // porque é rede lenta a sério.
+                             // ciclo de >5 erros de vídeo.
 
 // ═══ POLÍTICA DE ÁUDIO POR BROWSER (compatibilidade Firefox) ═══
 // O Firefox é rígido onde o Chromium é tolerante: desmutar PROGRA-
@@ -584,13 +547,8 @@ let   preload  = null;                  // PRÉ-CARGA: { slot, video, option,
 const slotVideo = { A: null, B: null };  // vídeo carregado em cada slot
 const slotState = { A: 'empty', B: 'empty' };
 const slotTimers = { A: null, B: null };
-const slotSawSignal = { A: false, B: false }; // ficou true ao 1º sinal de
-                                               // vida do player (onReady OU
-                                               // qualquer onStateChange)
-                                               // desde o início da carga
-                                               // actual — ver armSlotTimer
 const revealTimers = { A: null, B: null };  // timers do pré-roll (PRE_ROLL_MS)
-let apiWatchdog = null;                     // API do YT não chega? (20s)
+let apiWatchdog = null;                     // API do YT não chega? (12s)
 let activeSlot = 'A';
 let consecutiveErrors = 0;
 const failedIds = new Set();  // vídeos indisponíveis nesta sessão
@@ -843,7 +801,6 @@ function createPlayer(slot, video, idle) {
         events: {
             onReady: function() {
                 pReady[slot] = true;
-                slotSawSignal[slot] = true;   // 1º sinal de vida (ver armSlotTimer)
                 if (preload && preload.slot === slot) preload.ready = true;
                 killCaptions(p);        // legendas desmontadas desde o arranque
                 ensureIframeAllow(p);   // delegação de autoplay (Firefox)
@@ -920,27 +877,12 @@ function loadVideoInto(slot, video) {
     armSlotTimer(slot);
 }
 
-// Rede de segurança EM DUAS FASES (ver STALL_CHECK_MS / SLOT_TIMEOUT_MS
-// acima) — desenhada para reduzir o delay a sério, não só tolerá-lo:
-//   1) aos STALL_CHECK_MS: sem NENHUM sinal de vida do player → falha já
-//      (cobre o caso de bloqueio silencioso — vários vídeos presos
-//      seguidos, sem nunca disparar um erro explícito do YouTube — que
-//      era o que estava a causar os "1 a 2 minutos" de delay);
-//   2) só quando HOUVE sinal de vida → dá-se o resto do tempo até
-//      SLOT_TIMEOUT_MS (rede lenta a bufferizar, não bloqueio).
+// Rede de segurança: se em 14s não estiver a tocar, tratar como falha
 function armSlotTimer(slot) {
     clearSlotTimer(slot);
-    slotSawSignal[slot] = false;
     slotTimers[slot] = setTimeout(function() {
-        if (slotState[slot] !== 'loading') return;
-        if (!slotSawSignal[slot]) {
-            handleVideoFailure(slot);   // zero sinal → falha rápida
-            return;
-        }
-        slotTimers[slot] = setTimeout(function() {
-            if (slotState[slot] === 'loading') handleVideoFailure(slot);
-        }, SLOT_TIMEOUT_MS - STALL_CHECK_MS);
-    }, STALL_CHECK_MS);
+        if (slotState[slot] === 'loading') handleVideoFailure(slot);
+    }, 14000);
 }
 function clearSlotTimer(slot) {
     if (slotTimers[slot]) { clearTimeout(slotTimers[slot]); slotTimers[slot] = null; }
@@ -1052,11 +994,6 @@ function onState(slot, state) {
     // evento seu é irrelevante (erros do idle são tratados à parte no
     // onErrorEvt; as legendas já foram desmontadas no seu onReady)
     if (slotState[slot] === 'idle') return;
-    slotSawSignal[slot] = true;   // qualquer evento real = player vivo
-                                   // (ver armSlotTimer) — cobre também o
-                                   // caso de loadVideoById num player já
-                                   // existente, cujo onReady já disparou
-                                   // há muito nesta sessão
     // Legendas: o YT pode (re)montar o módulo de captions a cada vídeo
     // → desmontá-lo em cada estado relevante (antes de qualquer reveal)
     if (state === YT_BUFFERING || state === YT_PLAYING) {
