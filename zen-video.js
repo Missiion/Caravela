@@ -385,14 +385,23 @@ const SLOT_TIMEOUT_MS = 25000; // 2ª fase: só se chega aqui quando o player
 // vídeo arranca SEMPRE mudo (botão de som desligado, como os restantes
 // botões de som ambiente do hub) e liga APENAS por clique no botão de
 // som — o unmute síncrono DENTRO do handler do clique é sempre aceite
-// por qualquer browser. Se o som já estava ligado e um vídeo NOVO
-// entrar (troca/crossfade), ele entra mudo e o 1.º gesto do utilizador
-// (clique/tecla/scroll — listener de fallback) retoma-o com fade: o
-// vídeo NUNCA pára. Em browsers Chromium (Chrome/Edge/Brave/…) o
+// por qualquer browser. Em browsers Chromium (Chrome/Edge/Brave/…) o
 // comportamento mantém-se EXACTAMENTE o actual: som LIGADO por
 // defeito com fade-in na revelação. Nota: browsers WebKit (Safari)
 // têm política semelhante ao Firefox — se algum dia for preciso,
 // basta acrescentar o teste de UA aqui.
+// TROCAS DE VÍDEO com som já ligado (v13 — bug do bgShuffleBtn no
+// Firefox): quando a troca é uma chamada directa a switchVideo()
+// (clique real no botão de trocar fundo — ver window._zenCtrl.next em
+// main.js), o vídeo novo é pedido JÁ SEM MUTE logo na construção/
+// loadVideoById, ainda dentro desse gesto síncrono — em vez de nascer
+// mudo à espera de um gesto futuro. Isto elimina o desync em que o
+// botão de som mostrava "ligado" mas o vídeo ficava mudo até o
+// utilizador clicar em qualquer lado da página. Quando a troca NÃO
+// vem de um clique (avanço automático ao ENDED, recuperação de falha),
+// mantém-se o comportamento seguro de sempre: entra mudo e o 1.º gesto
+// do utilizador (clique/tecla/scroll — listener de fallback) retoma-o
+// com fade — o vídeo NUNCA pára.
 const UA = navigator.userAgent || '';
 const STRICT_AUDIO = /firefox/i.test(UA);   // Firefox e forks (Gecko)
 
@@ -768,14 +777,19 @@ function loadYTApi(cb) {
     }, 300);
 }
 
-function playerVarsFor(video, idle) {
+function playerVarsFor(video, idle, wantSound) {
     const pv = {
         autoplay: idle ? 0 : 1,  // idle (PRÉ-CARGA): NUNCA toca sozinho —
                               // o play é commandado pelo clique (gesto)
-        mute: 1,              // autoplay muted (policy do browser); o
-                              // becomeActive desmuda logo a seguir com
-                              // FADE-IN — e o 1.º gesto do utilizador
-                              // resolve qualquer bloqueio (fallback abaixo)
+        mute: (idle || !wantSound) ? 1 : 0,  // v13: troca accionada por
+                              // CLIQUE real (switchVideo) com soundOn já
+                              // activo → pede-se SEM MUTE logo desde a
+                              // construção do player, ainda dentro do
+                              // gesto síncrono do clique (ver
+                              // "SOM NAS TROCAS" em becomeActive). Todos
+                              // os outros casos (1.ª activação, avanço
+                              // automático ao ENDED, recuperação de
+                              // falha) continuam mudos por defeito.
         controls: 0,
         disablekb: 1,
         rel: 0,
@@ -830,7 +844,7 @@ function ensureIframeAllow(p) {
 // createIdlePlayer): nasce muted, autoplay:0, SEM tocar e SEM timers —
 // existe apenas para que o 1.º clique encontre o iframe pronto e o
 // loadVideoById/playVideo corram SINCRONAMENTE dentro do gesto.
-function createPlayer(slot, video, idle) {
+function createPlayer(slot, video, idle, wantSound) {
     const cover = coverEl(slot);
     cover.innerHTML = '';
     const ph = document.createElement('div');
@@ -839,7 +853,23 @@ function createPlayer(slot, video, idle) {
         width: '100%',
         height: '100%',
         videoId: video.id,
-        playerVars: playerVarsFor(video, idle),
+        host: 'https://www.youtube-nocookie.com',   // v13: modo de
+                              // privacidade oficial do YouTube — o
+                              // embed passa a ser servido a partir
+                              // deste domínio em vez de youtube.com,
+                              // que não define os cookies de
+                              // rastreamento/personalização de terceiros
+                              // (o site nunca precisou deles — é vídeo
+                              // de fundo, sem sign-in nem histórico).
+                              // Menos cookies de terceiros = menos para
+                              // a Enhanced Tracking Prevention (Firefox,
+                              // Edge, Brave — todas ligadas por defeito;
+                              // o Chrome puro não tem nada equivalente)
+                              // bloquear/particionar durante o handshake
+                              // inicial do iframe — o suspeito principal
+                              // por trás dos 15-35s de demora nesses
+                              // browsers versus o Chrome instantâneo.
+        playerVars: playerVarsFor(video, idle, wantSound),
         events: {
             onReady: function() {
                 pReady[slot] = true;
@@ -848,7 +878,8 @@ function createPlayer(slot, video, idle) {
                 killCaptions(p);        // legendas desmontadas desde o arranque
                 ensureIframeAllow(p);   // delegação de autoplay (Firefox)
                 try {
-                    p.mute(); p.setVolume(0);
+                    if (wantSound && !idle) { p.unMute(); p.setVolume(0); }
+                    else                    { p.mute();   p.setVolume(0); }
                     if (idle) p.pauseVideo();   // pré-carga: fica no poster
                     else     p.playVideo();
                 } catch (e) {}
@@ -893,14 +924,17 @@ function startPreload() {
     });
 }
 
-function loadVideoInto(slot, video) {
+function loadVideoInto(slot, video, wantSound) {
     slotVideo[slot] = video;
     slotState[slot] = 'loading';
     clearRevealTimer(slot);
     const p = players[slot];
     if (p && p.loadVideoById && pReady[slot]) {
         // Reutiliza o iframe existente — troca instantânea, sem criar novo.
-        // Arranca muted a 0: o becomeActive desmuda com fade-in quando o
+        // v13: se wantSound (troca por CLIQUE real com soundOn já activo)
+        // desmuta-se AQUI, síncrono, ainda dentro do gesto — exactamente
+        // como o playVideo() a seguir (ver nota abaixo). Sem wantSound,
+        // arranca muted a 0: o becomeActive desmuda com fade-in quando o
         // vídeo estiver a tocar (o utilizador nunca ouve um salto).
         const args = { videoId: video.id };
         if (video.start) args.startSeconds = video.start;
@@ -911,10 +945,14 @@ function loadVideoInto(slot, video) {
         // chega ao iframe AINDA DENTRO do gesto do utilizador — qualquer
         // browser o aceita. Enfileirar a chamada para depois de um
         // onReady assíncrono quebraria essa ligação (Firefox: parado).
-        try { p.mute(); p.loadVideoById(args); p.playVideo(); }
-        catch (e) { createPlayer(slot, video); return; }
+        try {
+            if (wantSound) { p.unMute(); p.setVolume(0); } else { p.mute(); }
+            p.loadVideoById(args);
+            p.playVideo();
+        }
+        catch (e) { createPlayer(slot, video, false, wantSound); return; }
     } else {
-        createPlayer(slot, video);
+        createPlayer(slot, video, false, wantSound);
         return;
     }
     armSlotTimer(slot);
@@ -1162,18 +1200,31 @@ function becomeActive(slot) {
     // utilizador retoma-o (fallback na secção SOM DO VÍDEO, abaixo).
     // Revelação e áudio acontecem NO MESMO instante (o PLAYING) → sem
     // desync entre som e imagem.
-    // STRICT_AUDIO (Firefox): NUNCA desmutar fora de um gesto — o Firefox
-    // PAUSA o vídeo quando um autoplay muted é desmutado programatica-
-    // mente (era exactamente o bug "o vídeo fica parado"). O som liga
-    // pelo botão (setSound — clique directo, síncrono) ou pelo 1.º gesto
-    // (listener de fallback) se já estava pedido. Nas TROCAS o vídeo
-    // novo entra mudo até esse gesto — mas NUNCA pára a meio.
+    // STRICT_AUDIO (Firefox): NUNCA desmutar AQUI fora de um gesto — o
+    // Firefox PAUSA o vídeo quando um autoplay muted é desmutado
+    // programaticamente fora da janela de gesto do utilizador (era
+    // exactamente o bug "o vídeo fica parado"). O som liga pelo botão
+    // (setSound — clique directo, síncrono) ou pelo 1.º gesto (listener
+    // de fallback) se já estava pedido.
+    // v13 — excepção deliberada: numa TROCA por CLIQUE real com soundOn
+    // já activo (switchVideo/wantSound), o vídeo já foi pedido SEM MUTE
+    // logo na construção/loadVideoById — ainda dentro desse gesto (ver
+    // loadVideoInto/createPlayer). Chegando aqui, isMuted()===false
+    // confirma que esse pedido síncrono resultou (o browser não o
+    // recusou) — então só falta o fade suave, NUNCA um unMute() tardio
+    // (que É o gesto perdido que causa a pausa). Se por qualquer razão
+    // ainda estiver muted (pedido síncrono recusado/ignorado), cai no
+    // comportamento seguro de sempre: fica mudo, à espera de um gesto.
     const p = players[slot];
     if (p) {
         try {
             if (soundOn && !STRICT_AUDIO) {
                 p.setVolume(0);
                 p.unMute();
+                fadeInAudio(p, audioStarted ? FADE_SWAP_MS : FADE_FIRST_MS);
+                audioStarted = true;
+            } else if (soundOn && STRICT_AUDIO && p.isMuted && !p.isMuted()) {
+                p.setVolume(0);
                 fadeInAudio(p, audioStarted ? FADE_SWAP_MS : FADE_FIRST_MS);
                 audioStarted = true;
             } else {
@@ -1227,13 +1278,13 @@ function becomeActive(slot) {
     }, STOP_OLD_MS);
 }
 
-function playNextVideo() {
+function playNextVideo(wantSound) {
     if (!zenOn || !activeOption) return;
     // (v11) segue a QUEUE por ordem (ENDED automático / troca manual /
     // recuperação de falha do vídeo activo) — nunca aleatório
     const video = serveNextVideo();
     if (!video) { deactivateZen(); return; }
-    loadVideoInto(otherSlot(activeSlot), video);
+    loadVideoInto(otherSlot(activeSlot), video, wantSound);
 }
 
 // Troca de vídeo (botão de troca de fundo no modo vídeo): o vídeo
@@ -1245,16 +1296,27 @@ function playNextVideo() {
 // posição — sem repetir nenhum vídeo mostrado até a queue dar a volta.
 // Cliques rápidos substituem o vídeo PENDENTE pelo seguinte da queue
 // (os saltados regressam na volta seguinte — nunca foram mostrados).
+// v13 — SOM NAS TROCAS (bug do bgShuffleBtn no Firefox): switchVideo()
+// só é chamada a partir de um CLIQUE real (bgShuffleBtn → _zenCtrl.next
+// → aqui, tudo síncrono). Se soundOn já estava activo (o utilizador já
+// tinha carregado no botão de som antes), pede-se o próximo vídeo JÁ
+// SEM MUTE (wantSound=true) — ainda dentro do gesto deste clique. Sem
+// isto, o becomeActive() forçava sempre mute nos browsers STRICT_AUDIO
+// (Firefox) em CADA troca, independentemente de soundOn, porque por
+// essa altura (~15-35s de carregamento + 3,5s de pré-roll depois) o
+// gesto original já expirou — o vídeo ficava mudo, mas soundOn e o
+// botão de som continuavam a mostrar "ligado": o desync reportado.
 function switchVideo() {
     if (!zenOn || !activeOption) return;
+    const wantSound = soundOn;
     const other = otherSlot(activeSlot);
     if (slotState[other] === 'loading') {
         const video = serveNextVideo();
         if (!video) return;
-        loadVideoInto(other, video);
+        loadVideoInto(other, video, wantSound);
         return;
     }
-    playNextVideo();
+    playNextVideo(wantSound);
 }
 
 function onErrorEvt(slot) {
@@ -1918,6 +1980,11 @@ function runCheckPool(tasks) {
         player = new YT.Player(div, {
             width: '320', height: '180',
             videoId: task.video.id,
+            host: 'https://www.youtube-nocookie.com',   // v13: consistente
+                          // com createPlayer — sem isto o verificador
+                          // testava um cenário (cookies de youtube.com)
+                          // diferente do que os visitantes realmente
+                          // recebem
             playerVars: { autoplay: 1, mute: 1, controls: 0, disablekb: 1,
                           rel: 0, fs: 0, iv_load_policy: 3, playsinline: 1,
                           cc_load_policy: 0, origin: window.location.origin },
