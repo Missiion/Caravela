@@ -157,10 +157,18 @@ body.storm-mode .bg-storm { opacity: 1; }
 .drop {
     position: absolute;
     bottom: 100%;
-    width: 1.5px;
-    height: 160px;
+    /* .rain-container cancela o zoom do body (zoom efectivo = 1), por
+       isso um width/height fixo aqui renderizava sempre ao tamanho
+       "real" (1.5px / 160px), maior do que devia em ecrãs mais
+       pequenos que os 1920px de baseline (onde antes encolhia junto
+       com o resto da UI). calc() com --ui-scale devolve essa escala
+       explicitamente, sem depender de zoom aninhado nem percentagens —
+       o resultado é sempre o mesmo tamanho visual que tinha antes de
+       cancelar o zoom do contentor, independentemente do browser. */
+    width: calc(1.5px * var(--ui-scale, 1));
+    height: calc(160px * var(--ui-scale, 1));
     background: linear-gradient(to bottom, transparent, rgba(135, 206, 250, 0.8), rgba(255, 255, 255, 1));
-    box-shadow: 0 0 4px rgba(135, 206, 250, 0.5);
+    box-shadow: 0 0 calc(4px * var(--ui-scale, 1)) rgba(135, 206, 250, 0.5);
     animation: fall linear infinite;
 }
 @keyframes fall { to { transform: translateY(280vh); } }
@@ -1384,12 +1392,23 @@ input[type=range]::-moz-range-thumb {
 /* =========================================
    SCREEN DROPS
    ========================================= */
+#screenDropsLayer {
+    /* Cancela o zoom do body para este wrapper e tudo o que main.js lá
+       meter dentro (spawnScreenDrop) — mesma lógica que .rain-container/
+       #night-canvas (ver comentário lá). Sem isto, os .screen-drop
+       (appendChild feito directamente no body até agora) usavam
+       left/--drop-end em pixels reais dentro de um ancestral com zoom
+       por cancelar, ficando presos/deslocados consoante o browser. */
+    zoom: calc(1 / var(--ui-scale, 1));
+}
 .screen-drop {
     position: fixed;
     top: 0;
     pointer-events: none;
     z-index: 50;
-    width: 2px;
+    /* Mesmo raciocínio do .drop: sem isto, a largura ficava sempre nos
+       2px "reais" em vez de acompanhar a escala do resto do design. */
+    width: calc(2px * var(--ui-scale, 1));
     border-radius: 0 0 50% 50%;
     background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(180,220,255,0.7) 60%, rgba(255,255,255,0.9) 100%);
     animation: screenDropFall linear forwards;

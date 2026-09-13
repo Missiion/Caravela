@@ -826,16 +826,23 @@ playerStage.addEventListener('wheel', (e) => {
     });
 
     // Screen drops on rain
+    const screenDropsLayer = document.getElementById('screenDropsLayer');
     let dropInterval = null;
     function spawnScreenDrop() {
         const drop = document.createElement('div');
         drop.className = 'screen-drop';
         const x = Math.random() * (window.innerWidth - 4);
-        const len = 18 + Math.random() * 30;
+        // len (comprimento do rasto) escalado pelo zoom, tal como a altura
+        // dos .drop — ver comentário em #screenDropsLayer (styles.css) e
+        // em .drop. x/endY ficam em pixels reais tal e qual: são POSIÇÕES
+        // (onde na tela reais o pingo aparece/cai), não tamanho visual, e
+        // o wrapper com zoom cancelado já garante que correspondem 1:1 ao
+        // ecrã real.
+        const len = (18 + Math.random() * 30) * _getBodyZoom();
         const dur = 0.6 + Math.random() * 0.8;
         const endY = Math.floor(80 + Math.random() * (window.innerHeight - 120));
         drop.style.cssText = `left:${x}px; height:${len}px; --drop-end:${endY}px; animation-duration:${dur}s;`;
-        document.body.appendChild(drop);
+        screenDropsLayer.appendChild(drop);
         drop.addEventListener('animationend', () => drop.remove());
     }
     rainBtn.addEventListener('click', () => {
@@ -1100,10 +1107,16 @@ playerStage.addEventListener('wheel', (e) => {
         for (let i = 0; i < NUM_STARS; i++) stars.push(newStar());
     }
     function newStar(born) {
+        // r multiplicado por _getBodyZoom(): o #night-canvas cancela o
+        // zoom do body (cobertura correcta do ecrã), mas o raio desenhado
+        // no buffer não tinha nenhuma relação com o zoom — ficava sempre
+        // ao tamanho "real" em vez de acompanhar a escala do resto do
+        // design, daí parecer maior do que devia em ecrãs mais pequenos
+        // que os 1920px de baseline.
         return {
             x: Math.random() * (W || window.innerWidth),
             y: Math.random() * (H || window.innerHeight),
-            r: 0.8 + Math.random() * 2.2,
+            r: (0.8 + Math.random() * 2.2) * _getBodyZoom(),
             phase: Math.random() * Math.PI * 2,
             speed: 0.008 + Math.random() * 0.018,
             alpha: 0,
