@@ -670,7 +670,40 @@ p.bio { color: var(--cor-texto-desc); font-size: 0.95rem; line-height: 1.6; font
     z-index: 99;           /* behind player z:100 */
     cursor: pointer;
     overflow: visible;
-    transition: top 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Ancorado com os MESMOS valores em px do player (bottom/right),
+       dentro do mesmo body com CSS zoom — o browser escala ambos em
+       conjunto e de forma consistente, tal como já acontecia com o
+       próprio player. Substitui o cálculo que era feito em JS via
+       getBoundingClientRect() + factor de correcção manual, que:
+        · era inconsistente entre browsers (chegava a dar posições
+          diferentes consoante a versão do motor);
+        · recalculava mal quando a F12 (DevTools) mudava o innerWidth
+          antes do zoom global ter sido recalculado (condição de corrida
+          com o resize debounced no <head>) → capa saía do sítio;
+        · multiplicava o tamanho do cartão por "zoom" outra vez, quando
+          o CSS zoom do body JÁ escala esse valor sozinho → em 4K ficava
+          com o dobro do tamanho (daí ficar gigante). */
+    --player-bottom: 30px;
+    --player-height: 112px;   /* 110px da .vhs-player-row + 1px+1px de border */
+    --player-right: 30px;
+    --player-width: 340px;
+    --card-size: 110px;
+    --peek-px: 22px;
+    --overlap-px: 6px;
+
+    width: var(--card-size);
+    height: var(--card-size);
+    right: calc(var(--player-right) + var(--player-width) - var(--card-size));
+    bottom: calc(var(--player-bottom) + var(--player-height) - (var(--card-size) - var(--peek-px)));
+
+    transition: bottom 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Estado expandido (hover) — sobe até quase tapar o player, só deixando
+   OVERLAP_PX visível atrás dele. Pura CSS, sem JS a recalcular nada. */
+.vhs-next-wrap.expanded {
+    bottom: calc(var(--player-bottom) + var(--player-height) - var(--overlap-px));
 }
 
 .vhs-next-card {

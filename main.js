@@ -310,9 +310,13 @@ function updateNextCard() {
 }
 
 // ── Next-track peek ───────────────────────────────────────────
-const PEEK_PX    = 22;
-const CARD_SIZE  = 110;
-const OVERLAP_PX = 6;
+// NOTA: a posição e o tamanho do .vhs-next-wrap deixaram de ser calculados
+// aqui em JS — passaram a ser CSS puro (ver .vhs-next-wrap em styles.css),
+// ancorado com os mesmos bottom/right em px que o player. Isso elimina a
+// necessidade de ler getBoundingClientRect() e compensar o CSS zoom à mão,
+// que era a causa da capa a tremer, a sair do sítio com a F12 aberta e a
+// ficar gigante em 4K. _getBodyZoom() continua a ser usada por outras
+// funções (tooltip, etc.) mais abaixo neste ficheiro.
 
 // FIX B: Função auxiliar para obter o zoom effectivo do body.
 // CSS zoom no body afecta getBoundingClientRect() — as coordenadas retornadas
@@ -328,34 +332,6 @@ function _getBodyZoom() {
         if (z && !isNaN(z) && z !== 1) return z;
     } catch(e) {}
     return 1;
-}
-
-function positionNextWrap(expanded) {
-    const wrap   = document.getElementById('vhsNextWrap');
-    const player = document.querySelector('.music-player-wrapper');
-    if (!wrap || !player) return;
-
-    // getBoundingClientRect() com CSS zoom devolve coordenadas no espaço escalado.
-    // Para position:fixed (relativo ao viewport real), compensamos com o zoom.
-    const zoom = _getBodyZoom();
-    const rect = player.getBoundingClientRect();
-
-    // Coordenadas reais no viewport (divididas pelo zoom)
-    const vpLeft = rect.left / zoom;
-    const vpTop  = rect.top  / zoom;
-
-    // O tamanho do card também precisa de ser escalado para corresponder ao player
-    const scaledCard = CARD_SIZE * zoom;
-
-    wrap.style.width  = scaledCard + 'px';
-    wrap.style.height = scaledCard + 'px';
-    wrap.style.left   = vpLeft + 'px';
-    wrap.style.bottom = 'auto';
-
-    const topRest     = vpTop - PEEK_PX;
-    const topExpanded = vpTop - scaledCard + OVERLAP_PX;
-
-    wrap.style.top = (expanded ? topExpanded : topRest) + 'px';
 }
 
 (function setupNextHover() {
@@ -475,7 +451,6 @@ function positionNextWrap(expanded) {
     wrap.addEventListener('mouseenter', () => {
         isExpanded = true;
         wrap.classList.add('expanded');
-        positionNextWrap(true);
         clearTimeout(fadeTimer);
         if (!isErasing) fadeTimer = setTimeout(startTypewriter, SHOW_DELAY);
     });
@@ -485,18 +460,11 @@ function positionNextWrap(expanded) {
     wrap.addEventListener('mouseleave', () => {
         isExpanded = false;
         wrap.classList.remove('expanded');
-        positionNextWrap(false);
         resetTilt();
         clearTimeout(fadeTimer);
         fadeOutTitle();
     });
 })();
-
-window.addEventListener('resize', () => {
-    const isExp = document.getElementById('vhsNextWrap')?.classList.contains('expanded');
-    positionNextWrap(!!isExp);
-});
-requestAnimationFrame(() => requestAnimationFrame(() => positionNextWrap(false)));
 
 // Click on next peek → drop animation then change track
 const vhsNextWrap = document.getElementById('vhsNextWrap');
@@ -697,7 +665,6 @@ if (vhsToggleBtn) {
 })();
 
 initCards();
-positionNextWrap(false);
 
 // Progress ring animation
 (function() {
@@ -789,6 +756,28 @@ playerStage.addEventListener('wheel', (e) => {
         drop.style.animationDelay = Math.random() * 2 + 's';
         rainBox.appendChild(drop);
     }
+
+    // FIX C (Edge): o CSS original usa top:-50vh/left:-50vw/width:200vw/
+    // height:200vh, definidos em styles.css. Estas unidades vw/vh devem
+    // resolver sempre contra o viewport real, independentemente do CSS
+    // `zoom` aplicado ao <body> (ver script de escala no <head> do
+    // index.html) — mas o Edge tem-se mostrado inconsistente nesse
+    // cálculo quando o elemento é descendente de um ancestral com zoom
+    // (o Chromium tem vindo a alterar a relação entre `zoom` e unidades/
+    // APIs de viewport ao longo de 2025-2026). Para não depender dessa
+    // resolução ambígua, fixamos o tamanho/posição da caixa de chuva
+    // directamente em pixels reais (window.innerWidth/innerHeight), que
+    // NUNCA são afectados por CSS zoom em nenhum browser.
+    function sizeRainBox() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        rainBox.style.width  = (w * 2) + 'px';
+        rainBox.style.height = (h * 2) + 'px';
+        rainBox.style.left   = (-w / 2) + 'px';
+        rainBox.style.top    = (-h / 2) + 'px';
+    }
+    sizeRainBox();
+    window.addEventListener('resize', sizeRainBox);
 
     let windTime = 0;
     function animateWind() {
@@ -1074,7 +1063,23 @@ playerStage.addEventListener('wheel', (e) => {
     let animFrame     = null;
     let W, H;
 
-    function resize() { W = nightCanvas.width = window.innerWidth; H = nightCanvas.height = window.innerHeight; }
+    // FIX C (Edge): o canvas tem width:100%/height:100% inline no HTML.
+    // Em condições normais isso resolve para o mesmo valor que
+    // window.innerWidth/innerHeight — mas com o `zoom` aplicado ao
+    // <body> (script de escala no <head>), o Edge por vezes resolve essa
+    // percentagem contra uma caixa diferente da do viewport real. Isso
+    // desalinha a resolução do canvas (buffer de pixels, definida aqui
+    // em innerWidth/innerHeight reais) com o tamanho CSS a que é
+    // esticado no ecrã, o que se manifesta como as estrelas aparecerem
+    // com "zoom" a mais e cortadas. Fixamos por isso também o tamanho
+    // CSS do canvas em pixels explícitos (não percentagem), garantindo
+    // que buffer e caixa CSS coincidem sempre 1:1.
+    function resize() {
+        W = nightCanvas.width  = window.innerWidth;
+        H = nightCanvas.height = window.innerHeight;
+        nightCanvas.style.width  = W + 'px';
+        nightCanvas.style.height = H + 'px';
+    }
     resize();
     window.addEventListener('resize', resize);
 
