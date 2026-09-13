@@ -637,7 +637,29 @@ const revealTimers = { A: null, B: null };  // timers do pré-roll (PRE_ROLL_MS)
 let apiWatchdog = null;                     // API do YT não chega? (20s)
 let activeSlot = 'A';
 let consecutiveErrors = 0;
-const failedIds = new Set();  // vídeos indisponíveis nesta sessão
+// (v17 · RESILIÊNCIA) Falhas de vídeo com TTL: um vídeo que falha
+// (player de erro — ex.: re-upload AINDA EM PROCESSAMENTO no YouTube,
+// que durante o processamento não é reproduzível) fica fora da rotação
+// APENAS por FAILED_TTL_MS, não para sempre: quando o YouTube terminar
+// o processamento, o vídeo volta à rotação sozinho — SEM refresh.
+// (Bug v16: uma categoria inteira em processamento morria ao 1.º clique
+// — a fila esgotava, o botão desligava-se e os cliques seguintes na
+// categoria morta activavam/desligavam no mesmo instante, sem nada
+// visível — "botão preso até ao refresh".)
+const FAILED_TTL_MS = 5 * 60 * 1000;   // 5 minutos (barato re-tentar)
+const failedMap = new Map();           // id → instante em que volta a estar disponível
+function markVideoFailed(id) { failedMap.set(id, Date.now() + FAILED_TTL_MS); }
+function isVideoFailed(id) {
+    const until = failedMap.get(id);
+    if (until === undefined) return false;
+    if (Date.now() >= until) { failedMap.delete(id); return false; }  // TTL expirou → volta à rotação
+    return true;
+}
+function failedList() {   // (debug/consola — IDs ainda em falha)
+    const now = Date.now(), out = [];
+    failedMap.forEach(function(until, id) { if (now < until) out.push(id); });
+    return out;
+}
 
 const YT_ENDED = 0, YT_PLAYING = 1, YT_PAUSED = 2, YT_BUFFERING = 3;
 
@@ -689,14 +711,34 @@ let qualityMode   = 'max';   // 'max' = sempre a melhor · 'floor' = piso
 const bufferTimes = [];      // BUFFERINGs do vídeo activo (janela 45s)
 let lastBufferAt  = 0;       // último buffering (histerese da recuperação)
 const floorTimers = { A: null, B: null };   // enforcement do piso (8s)
+// (v17 · FIX QUALIDADE) PICO de qualidade ATINGIDO por slot desde que
+// o vídeo foi carregado — distingue a SUBIDA inicial do auto-DASH do
+// YouTube (todo o vídeo começa em 360/480p e SOBE degrau a degrau,
+// mesmo com Internet excelente) de uma QUEDA adaptativa REAL (rede
+// congestionada a medio curso). Só a queda persistente abaixo de
+// 1080p num vídeo que JÁ atingiu 1080p justifica o piso — sem isto,
+// o aquecimento normal de um 4K (>8s por degrau) disparava o piso e
+// CORTAVA o vídeo a 1080p para sempre (bug v16: "stream em 1080p em
+// vez de 4K com Internet boa" — reproduzido com mock da API).
+const slotPeakRank = { A: 0, B: 0 };
+function resetQualityPeak(slot) { slotPeakRank[slot] = 0; }
 
-// Melhor nível que o vídeo ACTUALMENTE oferece (lista do player)
+// Melhor nível que o vídeo ACTUALMENTE oferece (lista do player).
+// (v17) Robusto contra a ORDEM da lista: a API não garante ordenação
+// — escolhemos explicitamente o de MAIOR rank em vez de confiar no
+// list[0] (se a lista viesse desordenada, podíamos pedir 720p num
+// vídeo 4K).
 function bestAvailable(p) {
     try {
         const lv = p.getAvailableQualityLevels ? p.getAvailableQualityLevels() : null;
         if (lv && lv.length) {
-            const list = lv.filter(function(q) { return q && q !== 'auto'; });
-            if (list.length) return list[0];
+            let best = null;
+            for (let i = 0; i < lv.length; i++) {
+                const q = lv[i];
+                if (!q || q === 'auto') continue;
+                if (best === null || qRank(q) > qRank(best)) best = q;
+            }
+            if (best) return best;
         }
     } catch (e) {}
     return null;
@@ -741,13 +783,30 @@ function recordBufferEvent() {
     if (bufferTimes.length >= 3) setQualityMode('floor');
 }
 
-// Queda adaptativa abaixo de 1080p (onPlaybackQualityChange): reagir
-// com uma GRAÇA de 8s — o YouTube começa baixo e sobe sozinho durante
-// o arranque; só intervir quando a queda é REAL e persistente.
+// (v17 · FIX QUALIDADE) Queda adaptativa abaixo de 1080p
+// (onPlaybackQualityChange) — reagir com uma GRAÇA de 8s, mas SÓ a
+// QUEDAS REAIS:
+//   • todo o vídeo começa em 360/480p (auto-DASH) e SOBE degrau a
+//     degrau enquanto o buffer enche — isso NÃO é queda, é o
+//     aquecimento normal; o vídeo que AINDA não atingiu 1080p nunca
+//     dispara o piso (era o bug v16: 8s "abaixo de 1080" durante a
+//     subida inicial cortava o 4K a 1080p com Internet boa);
+//   • QUEDA de verdade = o vídeo JÁ atingiu 1080p+ (pico por slot) e
+//     caiu abaixo — aí sim, persistente por 8s → fixar 1080p.
 function onQualityChange(slot, q) {
     // Pré-carga (nunca tocou) e slots já parados: eventos irrelevantes
     if (slotState[slot] === 'idle' || slotState[slot] === 'stopped') return;
-    if (!players[slot] || qRank(q) >= qRank('hd1080')) return;
+    if (!players[slot]) return;
+    const rank = qRank(q);
+    // Pico atingido neste vídeo — subidas contam (aquecimento incluído)
+    if (rank > slotPeakRank[slot]) slotPeakRank[slot] = rank;
+    // Qualidades ≥1080p: nada a fazer (nunca disparam o piso)
+    if (rank >= qRank('hd1080')) return;
+    // SUBIDA INICIAL: o vídeo nunca atingiu 1080p — o YouTube está a
+    // aquecer e sobe sozinho; intervir aqui cortava o 4K de quem tem
+    // Internet boa. O piso só faz sentido depois de uma QUEDA.
+    if (slotPeakRank[slot] < qRank('hd1080')) return;
+    // QUEDA REAL abaixo de 1080p → graça de 8s antes de fixar
     clearTimeout(floorTimers[slot]);
     floorTimers[slot] = setTimeout(function() {
         floorTimers[slot] = null;
@@ -937,6 +996,7 @@ function createPlayer(slot, video, idle, wantSound) {
     players[slot]   = p;
     slotVideo[slot] = video;
     slotState[slot] = idle ? 'idle' : 'loading';
+    resetQualityPeak(slot);   // (v17) vídeo novo no slot → pico a zero
     clearRevealTimer(slot);
     if (!idle) armSlotTimer(slot);   // o idle nunca falha — sem rede de
                                      // segurança (não há espera nenhuma)
@@ -972,6 +1032,9 @@ function startPreload() {
 function loadVideoInto(slot, video, wantSound) {
     slotVideo[slot] = video;
     slotState[slot] = 'loading';
+    resetQualityPeak(slot);   // (v17) vídeo novo no slot → o pico de
+                              // qualidade recomeça (o auto-DASH parte
+                              // sempre de baixo — não é queda)
     clearRevealTimer(slot);
     const p = players[slot];
     if (p && p.loadVideoById && pReady[slot]) {
@@ -1112,13 +1175,26 @@ function categoryAllowedFor(opt) {
     return window.ZenAds ? window.ZenAds.categoryAvailable(opt) : true;
 }
 
+// (v17 · RESILIÊNCIA) Aviso de categoria temporariamente indisponível:
+// a fila morreu porque TODOS os vídeos da categoria falharam (ex.:
+// re-uploads ainda em processamento no YouTube, que durante o
+// processamento não são reproduzíveis). Reusa o toast do zen-ads.js
+// com texto próprio (i18n zenCatUnavailable) — o throttle anti-spam
+// (15s) vive no zen-ads.js; o zen desliga-se limpo logo a seguir.
+function notifyCategoryEmpty() {
+    if (!window.ZenAds || !window.ZenAds.notifyText) return;
+    var t = (window._i18n && window._i18n.get)
+        ? window._i18n.get('zenCatUnavailable') : null;
+    if (t && typeof t === 'string') window.ZenAds.notifyText(t);
+}
+
 // Escolha ALEATÓRIA simples — usada APENAS pela pré-carga de arranque
 // (um PALPITE de categoria: se o 1.º clique do utilizador for essa
 // categoria, o vídeo pré-carregado passa para a FRENTE da queue — ver
 // buildQueue; a ordem segue igualmente aleatória a partir dele).
 function randomVideoOf(opt) {
     const pool = opt.videos.filter(function(v) {
-        return !failedIds.has(v.id) && videoAllowedFor(v);   // (v15) duas faces
+        return !isVideoFailed(v.id) && videoAllowedFor(v);   // (v15/v17) faces+TTL
     });
     return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
 }
@@ -1129,7 +1205,7 @@ function randomVideoOf(opt) {
 // que o hit da pré-carga e a ordem da queue são coerentes).
 function buildQueue(opt, firstVideo) {
     const pool = opt.videos.filter(function(v) {
-        return !failedIds.has(v.id) && videoAllowedFor(v);   // (v15) duas faces
+        return !isVideoFailed(v.id) && videoAllowedFor(v);   // (v15/v17) faces+TTL
     });
     shuffleList(pool);
     let startIdx = 0;
@@ -1156,7 +1232,7 @@ function serveNextVideo() {
     for (let k = 0; k < n; k++) {
         const idx = (queueIdx + k) % n;        // procura desde a posição actual
         const v = videoQueue[idx];
-        if (!failedIds.has(v.id) && videoAllowedFor(v)) {   // (v15) duas faces
+        if (!isVideoFailed(v.id) && videoAllowedFor(v)) {   // (v15/v17) faces+TTL
             queueIdx = (idx + 1) % n;          // ponteiro avança (cicla)
             return v;
         }
@@ -1414,7 +1490,7 @@ function onErrorEvt(slot) {
     // tocar no ciclo de falhas da activação em curso (noutro slot)
     if (slotState[slot] === 'idle') {
         const iv = slotVideo[slot];
-        if (iv) failedIds.add(iv.id);
+        if (iv) markVideoFailed(iv.id);
         return;
     }
     // Evento obsoleto de um slot já parado/tapado (troca concluída ou
@@ -1422,7 +1498,7 @@ function onErrorEvt(slot) {
     // do slot morto por cima do vídeo actual
     if (slot !== activeSlot && slotState[slot] === 'stopped') return;
     const v = slotVideo[slot];
-    if (v) failedIds.add(v.id);   // indisponível → não voltar a escolher
+    if (v) markVideoFailed(v.id);   // indisponível → fora da rotação durante o TTL
     slotState[slot] = 'error';
     handleVideoFailure(slot);
 }
@@ -1439,10 +1515,10 @@ function handleVideoFailure(slot) {
         playNextVideo();
     } else {
         // O vídeo em carregamento falhou → tentar outro no MESMO slot
-        // (v11: o próximo da queue — o falhado fica em failedIds e é
-        // saltado para sempre nesta sessão)
+        // (v11: o próximo da queue — o falhado fica em falha (TTL v17)
+        // e é saltado até o TTL expirar)
         const video = serveNextVideo();
-        if (!video) { deactivateZen(); return; }
+        if (!video) { notifyCategoryEmpty(); deactivateZen(); return; }
         loadVideoInto(slot, video);
     }
 }
@@ -1494,7 +1570,7 @@ function activateOption(opt) {
         if (!zenOn) return;            // desligado durante a carga da API
         let video, slot;
         if (preload && preload.ready && preload.option === opt &&
-            !failedIds.has(preload.video.id) &&
+            !isVideoFailed(preload.video.id) &&
             videoAllowedFor(preload.video)) {   // (v15) HIT só se permitido
             // PRÉ-CARGA HIT: o player deste slot já existe e está PRONTO
             // desde o arranque → o loadVideoById + playVideo do
@@ -1516,7 +1592,7 @@ function activateOption(opt) {
         // está a carregar — zero desperdício da pré-carga)
         buildQueue(opt, video);
         if (!video) video = serveNextVideo();
-        if (!video) { deactivateZen(); return; }
+        if (!video) { notifyCategoryEmpty(); deactivateZen(); return; }
         // v14: mesma lógica de "SOM NAS TROCAS" do switchVideo — este
         // loadVideoInto ainda corre dentro do gesto síncrono do clique de
         // confirmação (zenBtn), quer reutilize o player pré-carregado
@@ -1557,6 +1633,8 @@ function deactivateZen() {
     clearTimeout(floorTimers.A);
     clearTimeout(floorTimers.B);
     floorTimers.A = floorTimers.B = null;
+    resetQualityPeak('A');   // (v17) próximos vídeos recomeçam o pico
+    resetQualityPeak('B');   // (subida auto-DASH ≠ queda)
     ['A', 'B'].forEach(function(s) {
         const p = players[s];
         if (p && p.mute) { try { p.mute(); } catch (e) {} }
@@ -1564,6 +1642,15 @@ function deactivateZen() {
     soundOn = true;
     audioStarted = false;
     applySoundVisual(soundOn);   // visual coerente com o novo default (ligado)
+    // (v17 · RESILIÊNCIA) Repor a SELECÇÃO no default: se o zen morreu
+    // porque a categoria activa esgotou a fila (vídeos todos em falha —
+    // ex.: re-uploads ainda em processamento no YouTube), deixar o
+    // selectedIdx preso na categoria morta fazia os cliques seguintes
+    // (no botão ou no ícone centrado) activarem/desligarem no mesmo
+    // instante — "botão preso até ao refresh". Com a reposição, o botão
+    // volta logo ao default e o utilizador pode escolher outra
+    // categoria (ou re-tentar a mesma — os failedIds têm TTL de 5min).
+    selectedIdx = 0;
     disengageVideoMode();   // restaura hub + botões IMEDIATAMENTE
     updateZenBtn();
     updateAudioWrap();
@@ -2770,7 +2857,7 @@ window._zenCtrl = {
             selectedIdx: selectedIdx, soundOn: soundOn, volume: volume,
             strictAudio: STRICT_AUDIO, qualityMode: qualityMode,
             videoMode: videoModeOn(), carouselOpen: carouselOpen,
-            pauseHintArmed: pauseHintArmed, failedIds: Array.from(failedIds)
+            pauseHintArmed: pauseHintArmed, failedIds: failedList(),
         };
     },
     isActive: function() { return !!(zenOn && activeOption); },
@@ -2780,6 +2867,29 @@ window._zenCtrl = {
     next: switchVideo,
     // ── QUALIDADE ADAPTATIVA (v10) — introspecção/debug/consola ──
     qualityMode: function() { return qualityMode; },
+    // (v17) Diagnóstico COMPLETO de qualidade (consola): o que o player
+    // está a servir, o que o vídeo oferece e o que o motor decidiu.
+    // Distingue "o YouTube ainda está a processar o 4K do re-upload"
+    // (available SEM hd2160 → nada a fazer, sobe sozinho quando o
+    // processamento terminar) de "o site limitou" (mode 'floor' +
+    // playing 'hd1080' num vídeo com hd2160 disponível).
+    qualityInfo: function() {
+        const p = activeSlot && players[activeSlot];
+        let cur = null, levels = null;
+        try {
+            if (p) {
+                if (p.getPlaybackQuality)     cur    = p.getPlaybackQuality();
+                if (p.getAvailableQualityLevels) levels = p.getAvailableQualityLevels();
+            }
+        } catch (e) {}
+        return {
+            mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
+            activeSlot: activeSlot,
+            playing: cur,                 // qualidade que o player serve AGORA
+            peakRank: slotPeakRank[activeSlot],  // pico atingido (subida conta)
+            available: levels             // o que ESTE vídeo oferece
+        };
+    },
     qualityForce: setQualityMode,              // debug: 'max' | 'floor'
     qualityRecover: recoverQualityIfStable,    // tick manual da recuperação
     // ── QUEUE DE VÍDEOS (v11) — introspecção/debug/consola ──

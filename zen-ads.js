@@ -209,6 +209,11 @@ function detect() {
 
 // ─────────────────────────────────────────────────────────────────────
 // NOTIFICAÇÃO — 1× por sessão de página · fundo centro · 10 segundos
+// (v17) showNotification(text?) — sem argumento usa o texto da DUAS
+// FACES (i18n zenAdsNotice, 1× por sessão); com argumento mostra esse
+// texto (usado pelo zen-video.js para avisos de RESILIÊNCIA — ex.:
+// categoria temporariamente indisponível — com throttle próprio de
+// 15s para não spammar em cliques repetidos).
 // ─────────────────────────────────────────────────────────────────────
 function noticeText() {
     var t = (window._i18n && window._i18n.get) ? window._i18n.get('zenAdsNotice')
@@ -217,9 +222,17 @@ function noticeText() {
         : 'This feature is limited. Use the Brave browser, or install an ad blocker, to fully enjoy it.';
 }
 
-function showNotification() {
-    if (state.notified) return;          // 1× por sessão de página
-    state.notified = true;
+var lastCustomNoticeAt = 0;    // throttle dos avisos custom (v17)
+
+function showNotification(text) {
+    // Texto CUSTOM (v17 — avisos do zen-video.js): throttle de 15s
+    if (text) {
+        if (Date.now() - lastCustomNoticeAt < 15000) return;
+        lastCustomNoticeAt = Date.now();
+    } else if (state.notified) {
+        return;                   // aviso das duas faces: 1× por sessão
+    }
+    if (!text) state.notified = true;
     var el = document.getElementById(TOAST_ID);
     if (!el) {
         el = document.createElement('div');
@@ -228,7 +241,7 @@ function showNotification() {
         el.setAttribute('aria-live', 'polite');
         (document.body || document.documentElement).appendChild(el);
     }
-    el.textContent = noticeText();
+    el.textContent = text || noticeText();
     // dupla rAF: garante que o elemento entra no layout antes de a
     // transição de opacidade arrancar (fade suave garantido)
     requestAnimationFrame(function() {
@@ -293,6 +306,11 @@ window.ZenAds = {
     // mostra a notificação SE a detecção já confirmou desprotecção
     notifyIfUnprotected: function() {
         if (state.protected === false) showNotification();
+    },
+    // (v17) mostra um aviso CUSTOM (texto do zen-video.js — ex.:
+    // categoria temporariamente indisponível); throttle de 15s
+    notifyText: function(text) {
+        if (typeof text === 'string' && text) showNotification(text);
     },
     // callback para quando a detecção CONFIRMAR desprotecção
     // (chamado de imediato se já estiver confirmada)

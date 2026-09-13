@@ -110,6 +110,10 @@
             // (v15 · DUAS FACES — zen-ads.js) notificação para quem não
             // tem adblock nem Brave (fundo centro do ecrã, 10 segundos)
             zenAdsNotice: 'This feature is limited. Use the Brave browser, or install an ad blocker, to fully enjoy it.',
+            // (v17 · RESILIÊNCIA — zen-video.js) categoria cujos vídeos
+            // falharam todos (ex.: re-uploads ainda em processamento
+            // no YouTube) — o zen desliga-se sozinho com este aviso
+            zenCatUnavailable: 'This category is temporarily unavailable — some videos may still be processing or unreachable. Try again in a few minutes.',
 
             modPanelTooltip:    '\u26A1 Mod Panel',
             modTitleModeration: '\u26A1 Moderation',
@@ -271,6 +275,10 @@
             // (v15 · DUAS FACES — zen-ads.js) notificação para quem não
             // tem adblock nem Brave (fundo centro do ecrã, 10 segundos)
             zenAdsNotice: 'Esta função está limitada. Instala o browser Brave, ou um adblock, para teres acesso total.',
+            // (v17 · RESILIÊNCIA — zen-video.js) categoria cujos vídeos
+            // falharam todos (ex.: re-uploads ainda em processamento
+            // no YouTube) — o zen desliga-se sozinho com este aviso
+            zenCatUnavailable: 'Esta categoria está temporariamente indisponível — alguns vídeos podem ainda estar em processamento ou inacessíveis. Tenta de novo dentro de alguns minutos.',
 
             modPanelTooltip:    '\u26A1 Painel Mod',
             modTitleModeration: '\u26A1 Modera\u00E7\u00E3o',
