@@ -738,8 +738,19 @@ playerStage.addEventListener('wheel', (e) => {
     document.body.addEventListener('mousemove', (e) => {
         if (document.body.classList.contains('game-open')) return;
         if (suspended()) return;
-        const xAxis = (window.innerWidth  / 2 - e.pageX) / 150;
-        const yAxis = (window.innerHeight / 2 - e.pageY) / 150;
+        // Centro da própria caixa via getBoundingClientRect(), não do
+        // viewport (innerWidth/innerHeight) cruzado com pageX/pageY
+        // (documento) — o mesmo tipo de mistura de espaços que já
+        // causou os bugs da capa/chuva/estrelas. getBoundingClientRect()
+        // e clientX/clientY vivem sempre no mesmo espaço em qualquer
+        // browser, com ou sem zoom (é o mesmo padrão já usado em
+        // applyTilt(), mais abaixo, para o tilt da capa da próxima
+        // música).
+        const r  = card.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const xAxis = (cx - e.clientX) / 150;
+        const yAxis = (cy - e.clientY) / 150;
         card.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
     });
     document.body.addEventListener('mouseleave', () => {
