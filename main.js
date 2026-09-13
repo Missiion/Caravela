@@ -310,13 +310,9 @@ function updateNextCard() {
 }
 
 // ── Next-track peek ───────────────────────────────────────────
-// NOTA: a posição e o tamanho do .vhs-next-wrap deixaram de ser calculados
-// aqui em JS — passaram a ser CSS puro (ver .vhs-next-wrap em styles.css),
-// ancorado com os mesmos bottom/right em px que o player. Isso elimina a
-// necessidade de ler getBoundingClientRect() e compensar o CSS zoom à mão,
-// que era a causa da capa a tremer, a sair do sítio com a F12 aberta e a
-// ficar gigante em 4K. _getBodyZoom() continua a ser usada por outras
-// funções (tooltip, etc.) mais abaixo neste ficheiro.
+const PEEK_PX    = 22;
+const CARD_SIZE  = 110;
+const OVERLAP_PX = 6;
 
 // FIX B: Função auxiliar para obter o zoom effectivo do body.
 // CSS zoom no body afecta getBoundingClientRect() — as coordenadas retornadas
@@ -334,19 +330,33 @@ function _getBodyZoom() {
     return 1;
 }
 
-// NOTA (2026-09): a antiga _getFixedZoomFactor() tentava DETECTAR em
-// runtime, com uma sonda, se este browser volta a multiplicar o
-// width/height de um position:fixed pelo zoom do body — mas essa sonda
-// dependia de getBoundingClientRect() sob zoom, que é precisamente a
-// API cuja relação com `zoom` é inconsistente entre browsers/versões
-// (é o mesmo problema de fundo que já tínhamos tentado contornar antes
-// com _getRectZoomFactor(), removida por outro motivo). Ou seja, estava
-// a tentar resolver uma ambiguidade usando uma medição que sofre da
-// mesma ambiguidade — por isso continuava a falhar (confirmado: voltou
-// a partir no Edge). Removida. A solução agora está em styles.css:
-// .rain-container e #night-canvas cancelam o zoom do body directamente
-// (zoom: calc(1 / var(--ui-scale, 1))), o que torna esta detecção
-// desnecessária — o zoom efectivo desses elementos é sempre 1.
+function positionNextWrap(expanded) {
+    const wrap   = document.getElementById('vhsNextWrap');
+    const player = document.querySelector('.music-player-wrapper');
+    if (!wrap || !player) return;
+
+    // getBoundingClientRect() com CSS zoom devolve coordenadas no espaço escalado.
+    // Para position:fixed (relativo ao viewport real), compensamos com o zoom.
+    const zoom = _getBodyZoom();
+    const rect = player.getBoundingClientRect();
+
+    // Coordenadas reais no viewport (divididas pelo zoom)
+    const vpLeft = rect.left / zoom;
+    const vpTop  = rect.top  / zoom;
+
+    // O tamanho do card também precisa de ser escalado para corresponder ao player
+    const scaledCard = CARD_SIZE * zoom;
+
+    wrap.style.width  = scaledCard + 'px';
+    wrap.style.height = scaledCard + 'px';
+    wrap.style.left   = vpLeft + 'px';
+    wrap.style.bottom = 'auto';
+
+    const topRest     = vpTop - PEEK_PX;
+    const topExpanded = vpTop - scaledCard + OVERLAP_PX;
+
+    wrap.style.top = (expanded ? topExpanded : topRest) + 'px';
+}
 
 (function setupNextHover() {
     const wrap  = document.getElementById('vhsNextWrap');
@@ -465,6 +475,7 @@ function _getBodyZoom() {
     wrap.addEventListener('mouseenter', () => {
         isExpanded = true;
         wrap.classList.add('expanded');
+        positionNextWrap(true);
         clearTimeout(fadeTimer);
         if (!isErasing) fadeTimer = setTimeout(startTypewriter, SHOW_DELAY);
     });
@@ -474,11 +485,18 @@ function _getBodyZoom() {
     wrap.addEventListener('mouseleave', () => {
         isExpanded = false;
         wrap.classList.remove('expanded');
+        positionNextWrap(false);
         resetTilt();
         clearTimeout(fadeTimer);
         fadeOutTitle();
     });
 })();
+
+window.addEventListener('resize', () => {
+    const isExp = document.getElementById('vhsNextWrap')?.classList.contains('expanded');
+    positionNextWrap(!!isExp);
+});
+requestAnimationFrame(() => requestAnimationFrame(() => positionNextWrap(false)));
 
 // Click on next peek → drop animation then change track
 const vhsNextWrap = document.getElementById('vhsNextWrap');
@@ -679,6 +697,7 @@ if (vhsToggleBtn) {
 })();
 
 initCards();
+positionNextWrap(false);
 
 // Progress ring animation
 (function() {
@@ -738,28 +757,8 @@ playerStage.addEventListener('wheel', (e) => {
     document.body.addEventListener('mousemove', (e) => {
         if (document.body.classList.contains('game-open')) return;
         if (suspended()) return;
-        // Centro da própria caixa via getBoundingClientRect(), não do
-        // viewport (innerWidth/innerHeight) cruzado com pageX/pageY
-        // (documento) — o mesmo tipo de mistura de espaços que já
-        // causou os bugs da capa/chuva/estrelas. getBoundingClientRect()
-        // e clientX/clientY vivem sempre no mesmo espaço em qualquer
-        // browser, com ou sem zoom (é o mesmo padrão já usado em
-        // applyTilt(), mais abaixo, para o tilt da capa da próxima
-        // música).
-        const r  = card.getBoundingClientRect();
-        const cx = r.left + r.width / 2;
-        const cy = r.top + r.height / 2;
-        const xAxis = (cx - e.clientX) / 150;
-        const yAxis = (cy - e.clientY) / 150;
-        // De volta a só rotateY/rotateX: perspective() como function local
-        // (tentativa anterior) só dá profundidade ao PRÓPRIO elemento — não
-        // é o mesmo que a propriedade "perspective" no PAI, que é o que
-        // realmente estabelece o espaço 3D partilhado usado pelos filhos
-        // com translateZ (.profile-section, .links-section) sob este
-        // preserve-3d. Essa troca piorou as coisas porque tirou o
-        // mecanismo de que esses filhos dependiam. perspective volta a
-        // viver no body (ver styles.css); o que falta resolver é a
-        // profundidade em si em Edge, não este cálculo de ângulo.
+        const xAxis = (window.innerWidth  / 2 - e.pageX) / 150;
+        const yAxis = (window.innerHeight / 2 - e.pageY) / 150;
         card.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
     });
     document.body.addEventListener('mouseleave', () => {
@@ -790,23 +789,6 @@ playerStage.addEventListener('wheel', (e) => {
         drop.style.animationDelay = Math.random() * 2 + 's';
         rainBox.appendChild(drop);
     }
-
-    // O zoom do body é cancelado directamente em CSS para este elemento
-    // (.rain-container { zoom: calc(1/var(--ui-scale,1)) } em styles.css),
-    // por isso window.innerWidth/innerHeight (pixels reais, nunca afectados
-    // por zoom em nenhum browser) podem ser usados tal e qual aqui, sem
-    // qualquer divisão ou detecção — o zoom efectivo deste elemento é
-    // sempre 1, independentemente da resolução ou do browser.
-    function sizeRainBox() {
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        rainBox.style.width  = (w * 2) + 'px';
-        rainBox.style.height = (h * 2) + 'px';
-        rainBox.style.left   = (-w / 2) + 'px';
-        rainBox.style.top    = (-h / 2) + 'px';
-    }
-    sizeRainBox();
-    window.addEventListener('resize', sizeRainBox);
 
     let windTime = 0;
     function animateWind() {
@@ -846,23 +828,16 @@ playerStage.addEventListener('wheel', (e) => {
     });
 
     // Screen drops on rain
-    const screenDropsLayer = document.getElementById('screenDropsLayer');
     let dropInterval = null;
     function spawnScreenDrop() {
         const drop = document.createElement('div');
         drop.className = 'screen-drop';
         const x = Math.random() * (window.innerWidth - 4);
-        // len (comprimento do rasto) escalado pelo zoom, tal como a altura
-        // dos .drop — ver comentário em #screenDropsLayer (styles.css) e
-        // em .drop. x/endY ficam em pixels reais tal e qual: são POSIÇÕES
-        // (onde na tela reais o pingo aparece/cai), não tamanho visual, e
-        // o wrapper com zoom cancelado já garante que correspondem 1:1 ao
-        // ecrã real.
-        const len = (18 + Math.random() * 30) * _getBodyZoom();
+        const len = 18 + Math.random() * 30;
         const dur = 0.6 + Math.random() * 0.8;
         const endY = Math.floor(80 + Math.random() * (window.innerHeight - 120));
         drop.style.cssText = `left:${x}px; height:${len}px; --drop-end:${endY}px; animation-duration:${dur}s;`;
-        screenDropsLayer.appendChild(drop);
+        document.body.appendChild(drop);
         drop.addEventListener('animationend', () => drop.remove());
     }
     rainBtn.addEventListener('click', () => {
@@ -1099,40 +1074,7 @@ playerStage.addEventListener('wheel', (e) => {
     let animFrame     = null;
     let W, H;
 
-    // O canvas tem width:100%/height:100% inline no HTML, mas o zoom do
-    // body é cancelado directamente em CSS para este elemento
-    // (#night-canvas { zoom: calc(1/var(--ui-scale,1)) } em styles.css),
-    // por isso o valor percentual/CSS deixa de ter ambiguidade — mas
-    // mesmo assim fixamos o tamanho explicitamente em pixels aqui, para
-    // garantir que a resolução do buffer (nightCanvas.width/height, o
-    // bitmap onde se desenha) coincide sempre 1:1 com a caixa CSS
-    // (nightCanvas.style.width/height), em vez de depender de qualquer
-    // resolução de percentagem. Com o zoom efectivo deste elemento a
-    // ser sempre 1 (por causa do cancelamento em CSS), window.innerWidth/
-    // innerHeight (pixels reais, nunca afectados por zoom em nenhum
-    // browser) podem ser usados tal e qual, sem qualquer divisão.
-    //
-    // devicePixelRatio: nunca tinha sido tido em conta. Num ecrã com
-    // mais do que 1 pixel físico por pixel CSS (ecrãs de alta densidade,
-    // vulgo "Retina"/HiDPI — comum em portáteis e monitores recentes),
-    // um buffer dimensionado só em pixels CSS fica com menos resolução
-    // do que a caixa onde é esticado, e o browser tem de o ampliar —
-    // exactamente o que dava o aspecto de estrelas grandes e desfocadas/
-    // em blocos. O buffer passa a ter W*dpr / H*dpr pixels reais (nítido
-    // em qualquer densidade), mas W/H (usados em todo o resto do código
-    // — posição das estrelas, clearRect, etc.) continuam em pixels CSS;
-    // ctx.setTransform(dpr,...) traduz um para o outro automaticamente,
-    // sem ser preciso tocar em mais nenhum sítio.
-    function resize() {
-        const dpr = window.devicePixelRatio || 1;
-        W = window.innerWidth;
-        H = window.innerHeight;
-        nightCanvas.width  = W * dpr;
-        nightCanvas.height = H * dpr;
-        nightCanvas.style.width  = W + 'px';
-        nightCanvas.style.height = H + 'px';
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
+    function resize() { W = nightCanvas.width = window.innerWidth; H = nightCanvas.height = window.innerHeight; }
     resize();
     window.addEventListener('resize', resize);
 
@@ -1143,16 +1085,10 @@ playerStage.addEventListener('wheel', (e) => {
         for (let i = 0; i < NUM_STARS; i++) stars.push(newStar());
     }
     function newStar(born) {
-        // r multiplicado por _getBodyZoom(): o #night-canvas cancela o
-        // zoom do body (cobertura correcta do ecrã), mas o raio desenhado
-        // no buffer não tinha nenhuma relação com o zoom — ficava sempre
-        // ao tamanho "real" em vez de acompanhar a escala do resto do
-        // design, daí parecer maior do que devia em ecrãs mais pequenos
-        // que os 1920px de baseline.
         return {
             x: Math.random() * (W || window.innerWidth),
             y: Math.random() * (H || window.innerHeight),
-            r: (0.8 + Math.random() * 2.2) * _getBodyZoom(),
+            r: 0.8 + Math.random() * 2.2,
             phase: Math.random() * Math.PI * 2,
             speed: 0.008 + Math.random() * 0.018,
             alpha: 0,
@@ -1162,24 +1098,11 @@ playerStage.addEventListener('wheel', (e) => {
 
     const comets = [];
     function spawnComet() {
-        // len/r/lineWidth multiplicados por _getBodyZoom(), tal como o
-        // raio das estrelas (newStar) — mesmo motivo: sem isto, o cometa
-        // ficava sempre ao tamanho "real" em vez de acompanhar a escala
-        // do resto do design.
-        const zoom = _getBodyZoom();
         const fromTop = Math.random() < 0.5;
         const x = fromTop ? Math.random() * W : 0;
         const y = fromTop ? 0 : Math.random() * H * 0.5;
         const angle = (Math.PI / 6) + Math.random() * (Math.PI / 6);
-        comets.push({
-            x, y,
-            vx: Math.cos(angle) * (6 + Math.random() * 5),
-            vy: Math.sin(angle) * (3 + Math.random() * 3),
-            len: (80 + Math.random() * 120) * zoom,
-            r: 2.5 * zoom,
-            lineWidth: 1.5 * zoom,
-            alpha: 1, done: false
-        });
+        comets.push({ x, y, vx: Math.cos(angle) * (6 + Math.random() * 5), vy: Math.sin(angle) * (3 + Math.random() * 3), len: 80 + Math.random() * 120, alpha: 1, done: false });
     }
 
     let cometTimer = null;
@@ -1223,9 +1146,9 @@ playerStage.addEventListener('wheel', (e) => {
             grad.addColorStop(0, 'rgba(255,255,255,0)');
             grad.addColorStop(0.7, 'rgba(200,220,255,0.5)');
             grad.addColorStop(1, 'rgba(255,255,255,1)');
-            ctx.strokeStyle = grad; ctx.lineWidth = c.lineWidth; ctx.lineCap = 'round';
+            ctx.strokeStyle = grad; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
             ctx.beginPath(); ctx.moveTo(tailX, tailY); ctx.lineTo(c.x, c.y); ctx.stroke();
-            ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+            ctx.beginPath(); ctx.arc(c.x, c.y, 2.5, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
             ctx.restore();
         }
 
