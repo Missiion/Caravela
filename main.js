@@ -751,14 +751,31 @@ playerStage.addEventListener('wheel', (e) => {
         const cy = r.top + r.height / 2;
         const xAxis = (cx - e.clientX) / 150;
         const yAxis = (cy - e.clientY) / 150;
-        card.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
+        // perspective() como transform function LOCAL ao card, não como
+        // propriedade "perspective" ambiente no body — porque o body é o
+        // MESMO elemento que tem "zoom" aplicado, e a forma como um
+        // elemento compõe o seu próprio zoom com a sua própria
+        // perspective (property, não function) é precisamente uma das
+        // partes de "zoom" que a spec deixa em aberto (não estandardizado)
+        // — dá espaço a que motores divirjam (Edge aplicando menos
+        // profundidade que Chrome/Firefox no mesmo ecrã/zoom, daí o
+        // efeito ficar subtil e "achatado"). perspective() dentro do
+        // próprio transform do elemento não sofre dessa ambiguidade,
+        // porque escala em conjunto com o resto do transform do mesmo
+        // elemento, sempre no mesmo espaço — é o mesmo truque que já
+        // funciona em applyTilt() para a capa da próxima música.
+        card.style.transform = `perspective(1500px) rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
     });
     document.body.addEventListener('mouseleave', () => {
         if (document.body.classList.contains('game-open')) return;
         if (suspended()) return;
         if (document.body.classList.contains('zen-hub-anim')) return;
         card.style.transition = 'transform 0.5s ease';
-        card.style.transform = 'rotateY(0deg) rotateX(0deg)';
+        // Mantém a mesma lista de transform functions (perspective +
+        // rotateY + rotateX) do estado "ativo" — mudar a lista de
+        // functions entre estados impede a transição de interpolar
+        // corretamente a matriz.
+        card.style.transform = 'perspective(1500px) rotateY(0deg) rotateX(0deg)';
     });
     document.body.addEventListener('mouseenter', () => {
         if (document.body.classList.contains('game-open')) return;

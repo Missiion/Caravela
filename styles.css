@@ -109,7 +109,14 @@ body {
     justify-content: center;
     align-items: center;
     font-family: 'Inter', sans-serif;
-    perspective: 1500px;
+    /* perspective deixou de estar aqui: era propriedade ambiente no
+       MESMO elemento que tem "zoom" aplicado (ver script de escala no
+       <head> do index.html), e a composição zoom+perspective num só
+       elemento não é estandardizada — dava profundidade diferente em
+       Edge vs Chrome/Firefox ao mesmo zoom. Agora é perspective(1500px)
+       como transform function local no próprio #parallax-box (ver
+       PARALLAX 3D em main.js), que escala sempre junto com o resto do
+       transform desse elemento, sem essa ambiguidade. */
     padding: 20px;
     overflow: hidden;
     position: relative;
