@@ -334,6 +334,43 @@ function _getBodyZoom() {
     return 1;
 }
 
+// CONFIRMADO (2026-09, testado e sem ser problema de cache): browsers
+// divergem sobre se um elemento `position:fixed` volta a ser multiplicado
+// pelo `zoom` ambiente do body ao renderizar um width/height declarado em
+// px. Chrome/Firefox/etc: SIM, multiplicam — por isso o CSS precisa de
+// receber o valor já dividido por zoom, para que essa multiplicação o
+// devolva ao tamanho real do ecrã. Edge: NÃO multiplica — o valor
+// declarado é usado tal e qual como pixels reais, e dividir por zoom
+// dá um elemento demasiado pequeno (exactamente o "estrelas gigantes,
+// zona cortada" / "chuva só no topo" que apareceu só no Edge).
+// Detectamos qual dos dois comportamentos o browser actual tem com uma
+// sonda invisível, uma única vez por valor de zoom (cacheado — não
+// recalcula em cada resize, para não reintroduzir instabilidade).
+let _fixedZoomFactor    = null;
+let _fixedZoomFactorFor = null;
+function _getFixedZoomFactor() {
+    const zoom = _getBodyZoom();
+    if (zoom === 1) return 1;
+    if (_fixedZoomFactorFor === zoom) return _fixedZoomFactor;
+
+    const SIZE = 200;
+    const probe = document.createElement('div');
+    probe.style.cssText =
+        'position:fixed; top:0; left:0; width:' + SIZE + 'px; height:' + SIZE + 'px;' +
+        'visibility:hidden; pointer-events:none;';
+    document.body.appendChild(probe);
+    const renderedWidth = probe.getBoundingClientRect().width;
+    document.body.removeChild(probe);
+
+    // Mais perto de SIZE*zoom → o browser multiplicou → dividir por zoom.
+    // Mais perto de SIZE tal e qual → o browser não multiplicou → não dividir.
+    _fixedZoomFactor = (Math.abs(renderedWidth - SIZE * zoom) < Math.abs(renderedWidth - SIZE))
+        ? zoom
+        : 1;
+    _fixedZoomFactorFor = zoom;
+    return _fixedZoomFactor;
+}
+
 (function setupNextHover() {
     const wrap  = document.getElementById('vhsNextWrap');
     const card  = document.getElementById('vhsNextCard');
@@ -762,22 +799,20 @@ playerStage.addEventListener('wheel', (e) => {
     // resolver sempre contra o viewport real, independentemente do CSS
     // `zoom` aplicado ao <body> (ver script de escala no <head> do
     // index.html) — mas o Edge tem-se mostrado inconsistente nesse
-    // cálculo quando o elemento é descendente de um ancestral com zoom
-    // (o Chromium tem vindo a alterar a relação entre `zoom` e unidades/
-    // APIs de viewport ao longo de 2025-2026). Para não depender dessa
-    // resolução ambígua, fixamos o tamanho/posição da caixa de chuva
-    // directamente em pixels — mas em pixels do ESPAÇO DE DESIGN (a
-    // 1920px), não em pixels reais do ecrã: dividimos por zoom antes de
-    // atribuir ao style, para que a multiplicação pelo zoom que o body
-    // já aplica sozinho a esta caixa (por estar lá dentro) resulte de
-    // novo no tamanho real do ecrã. Sem esta divisão, o valor ficava em
-    // dobro (ou em metade) do necessário consoante a resolução, e como a
-    // caixa é ancorada a partir do seu próprio centro, isso fazia a
-    // chuva ficar deslocada e presa no canto superior esquerdo.
+    // cálculo quando o elemento é descendente de um ancestral com zoom.
+    // Para não depender dessa resolução ambígua, fixamos o tamanho/
+    // posição directamente em pixels — mas usando _getFixedZoomFactor()
+    // (ver junto a _getBodyZoom) em vez do zoom bruto, porque CONFIRMADO
+    // por teste directo: o Edge NÃO volta a multiplicar o width/height
+    // de um position:fixed pelo zoom do body, ao contrário de Chrome/
+    // Firefox/etc, que multiplicam. Dividir sempre por zoom (sem esta
+    // distinção) deixava a chuva certa nos outros browsers mas confinada
+    // ao topo do ecrã no Edge, por estar a dividir um valor que o Edge
+    // já não ia voltar a multiplicar.
     function sizeRainBox() {
-        const zoom = _getBodyZoom();
-        const w = window.innerWidth  / zoom;
-        const h = window.innerHeight / zoom;
+        const factor = _getFixedZoomFactor();
+        const w = window.innerWidth  / factor;
+        const h = window.innerHeight / factor;
         rainBox.style.width  = (w * 2) + 'px';
         rainBox.style.height = (h * 2) + 'px';
         rainBox.style.left   = (-w / 2) + 'px';
@@ -1085,22 +1120,27 @@ playerStage.addEventListener('wheel', (e) => {
     // BUG (2026-09): o valor explícito acima estava a ser atribuído em
     // pixels REAIS (window.innerWidth/innerHeight) directamente ao
     // style.width/height — mas o canvas vive dentro do <body> com CSS
-    // `zoom`, que volta a multiplicar esse valor no ecrã (o mesmo
-    // mecanismo que fazia o CARD_SIZE ficar em dobro em 4K na capa da
-    // próxima música). Resultado: a caixa CSS do canvas ficava maior/
-    // menor do que o viewport real, e como está ancorado a top:0;left:0,
-    // isso via-se como as estrelas ficarem "presas" só no canto superior
-    // esquerdo do ecrã. A resolução do buffer (nightCanvas.width/height)
-    // fica em pixels reais na mesma — isso não é afectado por zoom, é só
-    // o número de pixels do bitmap. Só a CAIXA CSS (style.width/height)
-    // precisa de ser dividida pelo zoom, para que a nova multiplicação
-    // pelo zoom, ao desenhar, resulte de novo no tamanho real do ecrã.
+    // `zoom`, que em Chrome/Firefox/etc volta a multiplicar esse valor
+    // no ecrã (o mesmo mecanismo que fazia o CARD_SIZE ficar em dobro em
+    // 4K na capa da próxima música). Isso fazia as estrelas ficarem
+    // "presas" no canto superior esquerdo nesses browsers.
+    // CONFIRMADO por teste directo: o Edge faz o OPOSTO — NÃO multiplica
+    // o width/height de um position:fixed pelo zoom do body. Por isso
+    // dividir sempre pelo zoom (sem distinguir) corrigia os outros
+    // browsers mas dava o efeito inverso no Edge: a caixa CSS ficava
+    // pequena a mais, o buffer (mantido a resolução real) era esticado
+    // para dentro dela, e via-se como estrelas gigantes numa zona
+    // cortada. _getFixedZoomFactor() (junto a _getBodyZoom) detecta com
+    // uma sonda qual dos dois comportamentos o browser actual tem, e só
+    // divide quando é mesmo preciso. A resolução do buffer
+    // (nightCanvas.width/height) fica sempre em pixels reais — isso não
+    // é afectado por zoom, é só o número de pixels do bitmap.
     function resize() {
-        const zoom = _getBodyZoom();
+        const factor = _getFixedZoomFactor();
         W = nightCanvas.width  = window.innerWidth;
         H = nightCanvas.height = window.innerHeight;
-        nightCanvas.style.width  = (W / zoom) + 'px';
-        nightCanvas.style.height = (H / zoom) + 'px';
+        nightCanvas.style.width  = (W / factor) + 'px';
+        nightCanvas.style.height = (H / factor) + 'px';
     }
     resize();
     window.addEventListener('resize', resize);
