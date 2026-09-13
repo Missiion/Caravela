@@ -109,14 +109,8 @@ body {
     justify-content: center;
     align-items: center;
     font-family: 'Inter', sans-serif;
-    /* perspective deixou de estar aqui: era propriedade ambiente no
-       MESMO elemento que tem "zoom" aplicado (ver script de escala no
-       <head> do index.html), e a composição zoom+perspective num só
-       elemento não é estandardizada — dava profundidade diferente em
-       Edge vs Chrome/Firefox ao mesmo zoom. Agora é perspective(1500px)
-       como transform function local no próprio #parallax-box (ver
-       PARALLAX 3D em main.js), que escala sempre junto com o resto do
-       transform desse elemento, sem essa ambiguidade. */
+    perspective: 1500px;
+    -webkit-perspective: 1500px;
     padding: 20px;
     overflow: hidden;
     position: relative;
@@ -193,6 +187,17 @@ body.storm-mode .bg-storm { opacity: 1; }
     box-shadow: 15px 15px 0px var(--cor-sombra);
     border: 2px solid var(--cor-borda-principal);
     transform-style: preserve-3d;
+    -webkit-transform-style: preserve-3d;
+    /* will-change força este elemento a ter a sua própria layer de
+       compositing dedicada ANTES da primeira rotação. Sem isto, alguns
+       motores Chromium (aparenta incluir builds do Edge) só promovem a
+       layer 3D no momento em que o transform muda, e nesse handoff
+       podem "achatar" os filhos com translateZ (.profile-section,
+       .links-section) em vez de os preservar em preserve-3d — o efeito
+       fica então visível (roda) mas sem a separação de profundidade
+       entre secções, i.e. "simples". will-change garante a layer 3D
+       desde o load, antes de qualquer mousemove. */
+    will-change: transform;
     transition: transform 0.1s ease;
     position: relative;
     z-index: 10;
