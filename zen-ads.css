@@ -1,0 +1,41 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   ZEN ADS — Caravela HUB · notificação do Sistema de Duas Faces (v15)
+   ═══════════════════════════════════════════════════════════════════════
+   Aviso informativo para quem NÃO tem adblock nem Brave: fundo CENTRO
+   do ecrã, 10 segundos, sem interferir com nada (pointer-events:none,
+   acima de toda a UI do zen — a camada mais alta do zen-video.css é
+   6000, esta fica em 6500). Estilo coerente com o hub: vidro escuro,
+   tipografia Inter, bordo suave. Criado/actualizado via JS (zen-ads.js)
+   — nada em HTML estático.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+#zenAdsToast {
+    position: fixed;
+    left: 50%;
+    bottom: 46px;
+    transform: translateX(-50%) translateY(14px);
+    z-index: 6500;
+    max-width: min(580px, calc(100vw - 56px));
+    padding: 14px 24px;
+    background: rgba(12, 12, 16, 0.92);
+    color: #ffffff;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    transition: opacity 0.45s ease, transform 0.45s ease, visibility 0.45s;
+}
+
+#zenAdsToast.zen-ads-toast--on {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}

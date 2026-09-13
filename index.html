@@ -15,14 +15,6 @@
     <link rel="preconnect" href="https://www.youtube.com">
     <link rel="preconnect" href="https://www.youtube-nocookie.com">
     <link rel="preconnect" href="https://i.ytimg.com" crossorigin>
-    <!-- v16: reserva anti-anúncios (Piped) — aquecer DNS/TLS da 1.ª
-         instância candidata (a verificada viva) e do endpoint da lista
-         dinâmica de instâncias; a instância REALMENTE usada (rotação)
-         ganha um preconnect dinâmico quando prova estar saudável (ver
-         markPipedHealthy em zen-video.js). -->
-    <link rel="preconnect" href="https://pipedapi.ducks.party">
-    <link rel="dns-prefetch" href="https://piped-proxy.ducks.party">
-    <link rel="dns-prefetch" href="https://piped-instances.kavin.rocks">
     <title>Master HUB</title>
     <script>
         // ─────────────────────────────────────────────────────────────
@@ -81,6 +73,7 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="game-launcher.css">
     <link rel="stylesheet" href="zen-video.css">
+    <link rel="stylesheet" href="zen-ads.css">
 </head>
 <body>
 
@@ -774,6 +767,11 @@
     <script src="suika.js"></script>
 
     <script src="signatures.js"></script>
+
+    <!-- ZEN ADS (v15 · sistema de duas faces: detecção de adblock/Brave +
+         etiquetas de anúncios + notificação informativa) — ANTES do
+         zen-video.js, que o consome -->
+    <script src="zen-ads.js"></script>
 
     <!-- ZEN VIDEO BACKGROUND (carrossel + vídeos de fundo do YouTube) -->
     <script src="zen-video.js"></script>
