@@ -132,6 +132,19 @@ body.storm-mode .bg-storm { opacity: 1; }
 /* --- CHUVA --- */
 .rain-container {
     position: fixed;
+    /* Cancela o zoom herdado do body: zoom aninhado multiplica
+       (scale * 1/scale = 1), por isso este elemento e tudo o que
+       desenha lá dentro passam a ter zoom efectivo 1, sempre — seja
+       qual for a resolução ou o browser. Isto elimina a ambiguidade
+       entre browsers sobre se um position:fixed dentro de um
+       ancestral com zoom volta a ter o seu width/height multiplicado
+       por esse zoom (Chrome/Firefox fazem-no, o Edge não) — em vez de
+       tentar adivinhar/detectar esse comportamento, simplesmente
+       deixa de haver zoom nenhum para ambiguar. O top/left/width/
+       height (definidos em JS a partir de window.innerWidth/Height,
+       ver sizeRainBox() em main.js) passam a corresponder sempre 1:1
+       a pixels reais do ecrã. */
+    zoom: calc(1 / var(--ui-scale, 1));
     top: -50vh; left: -50vw;
     width: 200vw; height: 200vh;
     pointer-events: none;
@@ -144,10 +157,18 @@ body.storm-mode .bg-storm { opacity: 1; }
 .drop {
     position: absolute;
     bottom: 100%;
-    width: 1.5px;
-    height: 160px;
+    /* .rain-container cancela o zoom do body (zoom efectivo = 1), por
+       isso um width/height fixo aqui renderizava sempre ao tamanho
+       "real" (1.5px / 160px), maior do que devia em ecrãs mais
+       pequenos que os 1920px de baseline (onde antes encolhia junto
+       com o resto da UI). calc() com --ui-scale devolve essa escala
+       explicitamente, sem depender de zoom aninhado nem percentagens —
+       o resultado é sempre o mesmo tamanho visual que tinha antes de
+       cancelar o zoom do contentor, independentemente do browser. */
+    width: calc(1.5px * var(--ui-scale, 1));
+    height: calc(160px * var(--ui-scale, 1));
     background: linear-gradient(to bottom, transparent, rgba(135, 206, 250, 0.8), rgba(255, 255, 255, 1));
-    box-shadow: 0 0 4px rgba(135, 206, 250, 0.5);
+    box-shadow: 0 0 calc(4px * var(--ui-scale, 1)) rgba(135, 206, 250, 0.5);
     animation: fall linear infinite;
 }
 @keyframes fall { to { transform: translateY(280vh); } }
@@ -670,7 +691,40 @@ p.bio { color: var(--cor-texto-desc); font-size: 0.95rem; line-height: 1.6; font
     z-index: 99;           /* behind player z:100 */
     cursor: pointer;
     overflow: visible;
-    transition: top 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Ancorado com os MESMOS valores em px do player (bottom/right),
+       dentro do mesmo body com CSS zoom — o browser escala ambos em
+       conjunto e de forma consistente, tal como já acontecia com o
+       próprio player. Substitui o cálculo que era feito em JS via
+       getBoundingClientRect() + factor de correcção manual, que:
+        · era inconsistente entre browsers (chegava a dar posições
+          diferentes consoante a versão do motor);
+        · recalculava mal quando a F12 (DevTools) mudava o innerWidth
+          antes do zoom global ter sido recalculado (condição de corrida
+          com o resize debounced no <head>) → capa saía do sítio;
+        · multiplicava o tamanho do cartão por "zoom" outra vez, quando
+          o CSS zoom do body JÁ escala esse valor sozinho → em 4K ficava
+          com o dobro do tamanho (daí ficar gigante). */
+    --player-bottom: 30px;
+    --player-height: 112px;   /* 110px da .vhs-player-row + 1px+1px de border */
+    --player-right: 30px;
+    --player-width: 340px;
+    --card-size: 110px;
+    --peek-px: 22px;
+    --overlap-px: 6px;
+
+    width: var(--card-size);
+    height: var(--card-size);
+    right: calc(var(--player-right) + var(--player-width) - var(--card-size));
+    bottom: calc(var(--player-bottom) + var(--player-height) - (var(--card-size) - var(--peek-px)));
+
+    transition: bottom 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Estado expandido (hover) — sobe até quase tapar o player, só deixando
+   OVERLAP_PX visível atrás dele. Pura CSS, sem JS a recalcular nada. */
+.vhs-next-wrap.expanded {
+    bottom: calc(var(--player-bottom) + var(--player-height) - var(--overlap-px));
 }
 
 .vhs-next-card {
@@ -1338,12 +1392,23 @@ input[type=range]::-moz-range-thumb {
 /* =========================================
    SCREEN DROPS
    ========================================= */
+#screenDropsLayer {
+    /* Cancela o zoom do body para este wrapper e tudo o que main.js lá
+       meter dentro (spawnScreenDrop) — mesma lógica que .rain-container/
+       #night-canvas (ver comentário lá). Sem isto, os .screen-drop
+       (appendChild feito directamente no body até agora) usavam
+       left/--drop-end em pixels reais dentro de um ancestral com zoom
+       por cancelar, ficando presos/deslocados consoante o browser. */
+    zoom: calc(1 / var(--ui-scale, 1));
+}
 .screen-drop {
     position: fixed;
     top: 0;
     pointer-events: none;
     z-index: 50;
-    width: 2px;
+    /* Mesmo raciocínio do .drop: sem isto, a largura ficava sempre nos
+       2px "reais" em vez de acompanhar a escala do resto do design. */
+    width: calc(2px * var(--ui-scale, 1));
     border-radius: 0 0 50% 50%;
     background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(180,220,255,0.7) 60%, rgba(255,255,255,0.9) 100%);
     animation: screenDropFall linear forwards;
@@ -1615,6 +1680,12 @@ body.mod-mode .mod-tab { display: flex; }
 .mod-tab,
 #night-canvas {
     transition: opacity 0.5s ease;
+}
+#night-canvas {
+    /* Mesma lógica de cancelamento de zoom que .rain-container — ver
+       comentário lá. Garante que o canvas cobre sempre o ecrã real,
+       independentemente do browser. */
+    zoom: calc(1 / var(--ui-scale, 1));
 }
 body.hidden-mode .hub-container,
 body.hidden-mode .music-player-wrapper,

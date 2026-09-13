@@ -57,7 +57,8 @@
                 styleEl.textContent =
                     'body { zoom: ' + scale + ';' +
                     ' width: ' + inv + 'vw !important;' +
-                    ' min-height: ' + inv + 'vh !important; }';
+                    ' min-height: ' + inv + 'vh !important; }' +
+                    ' :root { --ui-scale: ' + scale + '; }';
             }
 
             applyScale();
@@ -112,6 +113,14 @@
 
     <!-- ── RAIN DROPS CONTAINER ── -->
     <div class="rain-container" id="rainBox"></div>
+
+    <!-- ── SCREEN DROPS LAYER (pingos a escorrer pelo ecrã, spawnScreenDrop
+         em main.js) — cancela o zoom do body em styles.css, tal como
+         .rain-container/#night-canvas, para que os .screen-drop lá dentro
+         cubram sempre o ecrã real. Sem tamanho/posição próprios: os
+         .screen-drop são position:fixed e ignoram a caixa deste wrapper
+         para se posicionarem, só herdam dele o zoom cancelado. ── -->
+    <div id="screenDropsLayer"></div>
 
     <!-- ══════════════════════════════════════
          MAIN HUB CONTAINER
