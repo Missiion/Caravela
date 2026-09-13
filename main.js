@@ -766,11 +766,18 @@ playerStage.addEventListener('wheel', (e) => {
     // (o Chromium tem vindo a alterar a relação entre `zoom` e unidades/
     // APIs de viewport ao longo de 2025-2026). Para não depender dessa
     // resolução ambígua, fixamos o tamanho/posição da caixa de chuva
-    // directamente em pixels reais (window.innerWidth/innerHeight), que
-    // NUNCA são afectados por CSS zoom em nenhum browser.
+    // directamente em pixels — mas em pixels do ESPAÇO DE DESIGN (a
+    // 1920px), não em pixels reais do ecrã: dividimos por zoom antes de
+    // atribuir ao style, para que a multiplicação pelo zoom que o body
+    // já aplica sozinho a esta caixa (por estar lá dentro) resulte de
+    // novo no tamanho real do ecrã. Sem esta divisão, o valor ficava em
+    // dobro (ou em metade) do necessário consoante a resolução, e como a
+    // caixa é ancorada a partir do seu próprio centro, isso fazia a
+    // chuva ficar deslocada e presa no canto superior esquerdo.
     function sizeRainBox() {
-        const w = window.innerWidth;
-        const h = window.innerHeight;
+        const zoom = _getBodyZoom();
+        const w = window.innerWidth  / zoom;
+        const h = window.innerHeight / zoom;
         rainBox.style.width  = (w * 2) + 'px';
         rainBox.style.height = (h * 2) + 'px';
         rainBox.style.left   = (-w / 2) + 'px';
@@ -1074,11 +1081,26 @@ playerStage.addEventListener('wheel', (e) => {
     // com "zoom" a mais e cortadas. Fixamos por isso também o tamanho
     // CSS do canvas em pixels explícitos (não percentagem), garantindo
     // que buffer e caixa CSS coincidem sempre 1:1.
+    //
+    // BUG (2026-09): o valor explícito acima estava a ser atribuído em
+    // pixels REAIS (window.innerWidth/innerHeight) directamente ao
+    // style.width/height — mas o canvas vive dentro do <body> com CSS
+    // `zoom`, que volta a multiplicar esse valor no ecrã (o mesmo
+    // mecanismo que fazia o CARD_SIZE ficar em dobro em 4K na capa da
+    // próxima música). Resultado: a caixa CSS do canvas ficava maior/
+    // menor do que o viewport real, e como está ancorado a top:0;left:0,
+    // isso via-se como as estrelas ficarem "presas" só no canto superior
+    // esquerdo do ecrã. A resolução do buffer (nightCanvas.width/height)
+    // fica em pixels reais na mesma — isso não é afectado por zoom, é só
+    // o número de pixels do bitmap. Só a CAIXA CSS (style.width/height)
+    // precisa de ser dividida pelo zoom, para que a nova multiplicação
+    // pelo zoom, ao desenhar, resulte de novo no tamanho real do ecrã.
     function resize() {
+        const zoom = _getBodyZoom();
         W = nightCanvas.width  = window.innerWidth;
         H = nightCanvas.height = window.innerHeight;
-        nightCanvas.style.width  = W + 'px';
-        nightCanvas.style.height = H + 'px';
+        nightCanvas.style.width  = (W / zoom) + 'px';
+        nightCanvas.style.height = (H / zoom) + 'px';
     }
     resize();
     window.addEventListener('resize', resize);
