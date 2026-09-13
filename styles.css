@@ -132,6 +132,19 @@ body.storm-mode .bg-storm { opacity: 1; }
 /* --- CHUVA --- */
 .rain-container {
     position: fixed;
+    /* Cancela o zoom herdado do body: zoom aninhado multiplica
+       (scale * 1/scale = 1), por isso este elemento e tudo o que
+       desenha lá dentro passam a ter zoom efectivo 1, sempre — seja
+       qual for a resolução ou o browser. Isto elimina a ambiguidade
+       entre browsers sobre se um position:fixed dentro de um
+       ancestral com zoom volta a ter o seu width/height multiplicado
+       por esse zoom (Chrome/Firefox fazem-no, o Edge não) — em vez de
+       tentar adivinhar/detectar esse comportamento, simplesmente
+       deixa de haver zoom nenhum para ambiguar. O top/left/width/
+       height (definidos em JS a partir de window.innerWidth/Height,
+       ver sizeRainBox() em main.js) passam a corresponder sempre 1:1
+       a pixels reais do ecrã. */
+    zoom: calc(1 / var(--ui-scale, 1));
     top: -50vh; left: -50vw;
     width: 200vw; height: 200vh;
     pointer-events: none;
@@ -1648,6 +1661,12 @@ body.mod-mode .mod-tab { display: flex; }
 .mod-tab,
 #night-canvas {
     transition: opacity 0.5s ease;
+}
+#night-canvas {
+    /* Mesma lógica de cancelamento de zoom que .rain-container — ver
+       comentário lá. Garante que o canvas cobre sempre o ecrã real,
+       independentemente do browser. */
+    zoom: calc(1 / var(--ui-scale, 1));
 }
 body.hidden-mode .hub-container,
 body.hidden-mode .music-player-wrapper,

@@ -57,7 +57,8 @@
                 styleEl.textContent =
                     'body { zoom: ' + scale + ';' +
                     ' width: ' + inv + 'vw !important;' +
-                    ' min-height: ' + inv + 'vh !important; }';
+                    ' min-height: ' + inv + 'vh !important; }' +
+                    ' :root { --ui-scale: ' + scale + '; }';
             }
 
             applyScale();
