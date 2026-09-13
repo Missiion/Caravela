@@ -1142,11 +1142,24 @@ playerStage.addEventListener('wheel', (e) => {
 
     const comets = [];
     function spawnComet() {
+        // len/r/lineWidth multiplicados por _getBodyZoom(), tal como o
+        // raio das estrelas (newStar) — mesmo motivo: sem isto, o cometa
+        // ficava sempre ao tamanho "real" em vez de acompanhar a escala
+        // do resto do design.
+        const zoom = _getBodyZoom();
         const fromTop = Math.random() < 0.5;
         const x = fromTop ? Math.random() * W : 0;
         const y = fromTop ? 0 : Math.random() * H * 0.5;
         const angle = (Math.PI / 6) + Math.random() * (Math.PI / 6);
-        comets.push({ x, y, vx: Math.cos(angle) * (6 + Math.random() * 5), vy: Math.sin(angle) * (3 + Math.random() * 3), len: 80 + Math.random() * 120, alpha: 1, done: false });
+        comets.push({
+            x, y,
+            vx: Math.cos(angle) * (6 + Math.random() * 5),
+            vy: Math.sin(angle) * (3 + Math.random() * 3),
+            len: (80 + Math.random() * 120) * zoom,
+            r: 2.5 * zoom,
+            lineWidth: 1.5 * zoom,
+            alpha: 1, done: false
+        });
     }
 
     let cometTimer = null;
@@ -1190,9 +1203,9 @@ playerStage.addEventListener('wheel', (e) => {
             grad.addColorStop(0, 'rgba(255,255,255,0)');
             grad.addColorStop(0.7, 'rgba(200,220,255,0.5)');
             grad.addColorStop(1, 'rgba(255,255,255,1)');
-            ctx.strokeStyle = grad; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+            ctx.strokeStyle = grad; ctx.lineWidth = c.lineWidth; ctx.lineCap = 'round';
             ctx.beginPath(); ctx.moveTo(tailX, tailY); ctx.lineTo(c.x, c.y); ctx.stroke();
-            ctx.beginPath(); ctx.arc(c.x, c.y, 2.5, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+            ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
             ctx.restore();
         }
 
