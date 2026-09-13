@@ -1091,11 +1091,27 @@ playerStage.addEventListener('wheel', (e) => {
     // ser sempre 1 (por causa do cancelamento em CSS), window.innerWidth/
     // innerHeight (pixels reais, nunca afectados por zoom em nenhum
     // browser) podem ser usados tal e qual, sem qualquer divisão.
+    //
+    // devicePixelRatio: nunca tinha sido tido em conta. Num ecrã com
+    // mais do que 1 pixel físico por pixel CSS (ecrãs de alta densidade,
+    // vulgo "Retina"/HiDPI — comum em portáteis e monitores recentes),
+    // um buffer dimensionado só em pixels CSS fica com menos resolução
+    // do que a caixa onde é esticado, e o browser tem de o ampliar —
+    // exactamente o que dava o aspecto de estrelas grandes e desfocadas/
+    // em blocos. O buffer passa a ter W*dpr / H*dpr pixels reais (nítido
+    // em qualquer densidade), mas W/H (usados em todo o resto do código
+    // — posição das estrelas, clearRect, etc.) continuam em pixels CSS;
+    // ctx.setTransform(dpr,...) traduz um para o outro automaticamente,
+    // sem ser preciso tocar em mais nenhum sítio.
     function resize() {
-        W = nightCanvas.width  = window.innerWidth;
-        H = nightCanvas.height = window.innerHeight;
+        const dpr = window.devicePixelRatio || 1;
+        W = window.innerWidth;
+        H = window.innerHeight;
+        nightCanvas.width  = W * dpr;
+        nightCanvas.height = H * dpr;
         nightCanvas.style.width  = W + 'px';
         nightCanvas.style.height = H + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     resize();
     window.addEventListener('resize', resize);
