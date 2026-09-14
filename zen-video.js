@@ -697,7 +697,11 @@ function videoModeOn()  { return document.body.classList.contains('zen-video-mod
 // 10s — zero polling pesado) identifica se a Internet do utilizador
 // aguenta o máximo:
 //   • 3+ BUFFERINGs do vídeo ACTIVO (o visível — os slots em carga
-//     invisível nunca contam) numa janela deslizante de 45s, OU
+//     invisível nunca contam) numa janela deslizante de 45s — mas SÓ
+//     depois de o vídeo ter ATINGIDO 1080p neste slot (v21.2: o
+//     arranque lento dos embeds no Firefox com cookies bloqueados e
+//     a própria subida do aquecimento PRODUZEM bufferings que não
+//     são congestionamento — a mesma lição da 2.ª porta, v17), OU
 //   • uma queda ADAPTATIVA persistente abaixo de 1080p (o YouTube
 //     começa baixo e sobe sozinho — só conta se AINDA estiver baixa
 //     8s depois do evento onPlaybackQualityChange),
@@ -710,7 +714,11 @@ function videoModeOn()  { return document.body.classList.contains('zen-video-mod
 // nunca abaixo de 1080p").
 // Nota honesta: o YouTube trata setPlaybackQuality como PREFERÊNCIA
 // (a adaptação final é dele) — este sistema empurra a preferência
-// para máximo/piso e REAGE aos eventos reais do player.
+// para máximo/piso e REAGE aos eventos reais do player. (v21.2 ·
+// visto no Firefox+uBO do Quintas: com cookies de terceiros
+// rejeitados e anti-fingerprinting, o ABR do YouTube começa nos
+// 240/360p e sobe devagar — o site PEDIU sempre o máximo, a decisão
+// final é do lado de lá; não existe API para forçar mais do que isto.)
 const Q_ORDER = ['small','medium','large','hd720','hd1080','hd1440','hd2160','highres'];
 function qRank(q) { const i = Q_ORDER.indexOf(q); return i < 0 ? 0 : i; }
 
@@ -782,7 +790,13 @@ function setQualityMode(mode) {
 }
 
 // Um BUFFERING do vídeo ACTIVO — alimenta a janela de congestionamento
+// (v21.2) SÓ depois de o vídeo ter ATINGIDO 1080p neste slot: o
+// aquecimento e o arranque lento (Firefox, cookies bloqueados)
+// geram bufferings de SUBIDA — não são congestionamento. O MESMO
+// critério da porta quality-change (v17), agora nas duas portas.
 function recordBufferEvent() {
+    const s = activeSlot;
+    if (!s || slotPeakRank[s] < qRank('hd1080')) return;
     const now = Date.now();
     bufferTimes.push(now);
     lastBufferAt = now;
@@ -1318,7 +1332,7 @@ function onState(slot, state) {
         // QUALIDADE (vigilância silenciosa): só o buffering do vídeo
         // ACTIVO (o visível — os slots em carga/pré-roll invisíveis
         // não contam) alimenta a janela de congestionamento; 3 numa
-        // janela de 45s → fixar 1080p (o piso)
+        // janela de 45s, APÓS o vídeo ter atingido 1080p (v21.2) → piso
         if (slot === activeSlot) recordBufferEvent();
     }
     // PAUSED / UNSTARTED → sem acção
@@ -2892,6 +2906,7 @@ window._zenCtrl = {
             }
         } catch (e) {}
         return {
+            ver: 'v21.2',                 // confirma ficheiro vivo (cache?)
             mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
             activeSlot: activeSlot,
             playing: cur,                 // qualidade que o player serve AGORA
