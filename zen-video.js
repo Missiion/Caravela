@@ -403,20 +403,19 @@ const STALL_CHECK_MS = 6000; // 1ª fase do timer do slot (ver armSlotTimer,
                              // sério: quando o problema é sistémico
                              // (bloqueio, não rede lenta), 5 tentativas
                              // custam ~5×6s em vez de 5×SLOT_TIMEOUT_MS.
-const SLOT_TIMEOUT_MS = 40000; // 2ª fase: só se chega aqui quando o player
+const SLOT_TIMEOUT_MS = 25000; // 2ª fase: só se chega aqui quando o player
                              // JÁ deu sinal de vida (está mesmo a
-                             // carregar/bufferizar) mas ainda não tocou.
-                             // (v22.2: 25s → 40s) A era 4K endureceu o
-                             // arranque no Firefox: iframe sobredimensio-
-                             // nado + nocookie + cookies rejeitados =
-                             // handshakes de 15-35s (documentado em v13)
-                             // AGRAVADOS pelos manifestos 4K — um vídeo
-                             // SAUDÁVEL podia exceder os 25s, era morto
-                             // pelo guarda, e seis mortes seguidas
-                             // desligavam o zen (a espiral do LOCKOUT
-                             // que o reset do consecutiveErrors agora
-                             // corta). A 1ª fase (6s sem sinal)
-                             // continua a falhar rápido o BLOQUEADO.
+                             // carregar/bufferizar) mas ainda não tocou —
+                             // aí sim vale a pena dar-lhe o tempo todo,
+                             // porque é rede lenta a sério.
+                             // (v22.3 — histórico: subiu a 40s na v22.2
+                             // por leitura errada do que afinal era
+                             // THROTTLING de IP do YouTube (o Quintas
+                             // isolou-o: o mesmo browser funcionava via
+                             // VPN); revertido a pedido dele — com o IP
+                             // depauperado, falhar depressa e saltar
+                             // para o próximo vídeo é melhor do que
+                             // esperar 40s pelo que não vai tocar.)
 
 // ═══ POLÍTICA DE ÁUDIO POR BROWSER (compatibilidade Firefox) ═══
 // O Firefox é rígido onde o Chromium é tolerante: desmutar PROGRA-
@@ -1631,8 +1630,6 @@ function activateOption(opt) {
     // intenção de esconder a UI.
     readyToEngage = false;
     if (!zenOn) engagePending = false;
-    consecutiveErrors = 0;   // (v22.2) cinto-e-suspensórios do reset do
-                             // deactivateZen: sessão nova, orçamento novo
 
     // ÍCONE DE PAUSA desarmado: durante TODA a espera (roda a girar /
     // animação de selecção) o hover mostra sempre o ícone da CATEGORIA —
@@ -1708,14 +1705,6 @@ function deactivateZen() {
                               // depois do próximo 1.º fecho da UI
     videoQueue = [];          // (v11) a queue morre com a sessão — a
     queueIdx = 0;             // próxima activação volta a embaralhar
-    consecutiveErrors = 0;   // (v22.2 · LOCKOUT) o contador de falhas
-                              // SÓ zerava no PLAYING — depois da espiral
-                              // que desligou o zen, ficava ≥6 PARA
-                              // SEMPRE e a 1.ª hesitação de QUALQUER
-                              // sessão nova voltava a desligá-lo (o
-                              // "parou de funcionar de todo" no Firefox
-                              // do Quintas). Sessão nova = orçamento
-                              // novo de 6 falhas.
     clearRevealTimer('A');
     clearRevealTimer('B');
     clearApiWatchdog();   // desligou durante a carga da API → cancelar a
@@ -2988,7 +2977,7 @@ window._zenCtrl = {
             }
         } catch (e) {}
         return {
-            ver: 'v22.2',                 // confirma ficheiro vivo (cache?)
+            ver: 'v22.3',                 // confirma ficheiro vivo (cache?)
             mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
             activeSlot: activeSlot,
             playerPx: lastPlayerPx,       // (v22) janela de LAYOUT do player
