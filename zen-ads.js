@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   ZEN ADS — Caravela HUB · Sistema de Duas Faces (v20)
+   ZEN ADS — Caravela HUB · Sistema de Duas Faces (v21)
    ═══════════════════════════════════════════════════════════════════════
    Detecção de adblock / Brave + etiquetas de anúncios + alternativas
    de baixa qualidade nos vídeos.
@@ -30,28 +30,54 @@
      activada — trocar de categoria já não a mostra; o refresh repõe)
      a explicar como desbloquear tudo.
 
-   DETECÇÃO (v20 · 4 vias independentes; "protegido" se QUALQUER der
-   positivo; nada conclusivo a tempo → assume-se PROTEGIDO — nunca
-   limitamos a função por incerteza):
+   DETECÇÃO v21 · A ARMADILHA (proposta do Quintas, 2026-09):
+   o site esconde VÁRIAS iscas que um adblock está DESTINADO a
+   bloquear — se QUALQUER delas desaparecer, há adblock em curso.
+   4 vias independentes (positivo em QUALQUER uma → protegido;
+   nada conclusivo a tempo → assume-se PROTEGIDO):
      1. BRAVE — API oficial do browser (navigator.brave.isBrave()).
-     2. BAIT ELEMENT — div com as classes que as listas de filtros
-        (EasyList etc.) escondem; se desaparecer do layout, há adblock.
-     3. FETCH BAIT — pedido a um domínio REAL de publicidade
-        (pagead2.googlesyndication.com); as extensões bloqueiam-no ao
-        nível da rede e o fetch falha. Timeout NÃO conta como bloqueio
-        (rede lenta ≠ adblock).
-     4. SCRIPT BAIT (v20 · BUG FIREFOX) — o mesmo domínio de
-        publicidade, agora como tag <script> REAL. Motivo: no
-        Firefox as extensões (uBlock Origin incluído) bloqueiam o
-        adsbygoogle sobretudo como pedido de SCRIPT (as regras das
-        listas trazem o tipo $script) e DEIXAM PASSAR o fetch/
-        xmlhttprequest ao mesmo URL — resultado: o site via a face
-        desprotegida com adblock activo (no Edge/MV3 o bloqueio aplica-
-        se por padrão e o fetch chega a falhar; o Firefox segue o tipo
-        da regra ao rigor). Com a tag <script>, o pedido corre no
-        único tipo que TODOS os adblocks filtram — é a sua função
-        primária. onerror = bloqueio (ou erro de rede — mesma
-        semântica do FETCH BAIT); onload = domínio acessível.
+     2. ISCAS COSMÉTICAS — 2 divs escondidos com os conjuntos de
+        classes que as listas genéricas (EasyList & co.) escondem
+        por CSS: o conjunto CLÁSSICO dos detectores battle-tested
+        (pub_300x250, text-ad, textAd, text-ad-links...) + o nosso
+        alargado (adsbox, advertisement, ad-slot...). Duas
+        verificações (250ms + 750ms).
+     3. ARMADILHA DE REDE (fetch) — 4 domínios de publicidade com
+        regras BLANKET (||dominio^) nas listas: adnxs.com,
+        quantserve.com, doubleclick.net (blanket bloqueia QUALQUER
+        tipo de pedido — fetch incluído) + googlesyndication.com
+        (apanha bloqueadores do estilo Edge/MV3). Lição v20: o
+        adsbygoogle.js sozinho não chega — no uBO/Firefox do
+        Quintas o fetch E o script a esse URL passavam livres (o
+        ficheiro-biblioteca não está na rede de regras daquela
+        instalação — as regras bloqueiam a ENTREGA de anúncios,
+        não a biblioteca).
+     4. ARMADILHA DE REDE (script) — 3 tags <script> a ficheiros
+        REAIS de publicidade (gpt.js ×2 + adsbygoogle.js):
+        bloquear scripts de anúncio é a função primária de qualquer
+        adblock. onerror = bloqueio; onload = acessível; timeout
+        NÃO conta (rede lenta ≠ adblock).
+   Timeout/erro de rede NUNCA conta como bloqueio (incerto ≠
+   bloqueado). Diagnóstico do dono: consola → ZenAds._debug()
+   mostra a versão e o resultado de CADA isca.
+
+   SEGURANÇA PARA QUEM NÃO TEM ADBLOCK (pergunta do Quintas,
+   2026-09 · v21.1): as iscas só tocam a rede de quem NÃO bloqueia
+   (com adblock, os pedidos são cortados DENTRO do browser e nunca
+   saem). São domínios OFICIAIS (Google, Xandr/Microsoft, Quantcast)
+   por HTTPS, com ficheiros estáticos — sem vetor de malware e SEM
+   efeito visível: a página não tem slots de anúncio (as bibliotecas
+   gpt/adsbygoogle carregam, definem as suas filas globais e ficam
+   INACTIVAS; os fetches são no-cors, a resposta nunca é lida; as
+   tags são removidas do DOM mal resolvem). PRIVACIDADE (v21.1):
+   os 7 pedidos saem SEM referer (referrerPolicy no-referrer) e
+   sem cookies do site — o destinatário vê apenas um IP e um
+   User-Agent, sem saber de que site vieram (menos do que o pixel
+   de um Google Analytics qualquer). Falsos positivos (Pi-hole,
+   DNS filtrado, antivírus) caem na face PROTEGIDA — vêem tudo,
+   sem notificação: inócuo por desenho (e correcto: quem bloqueia
+   na rede também não vê os anúncios do player, logo não precisa
+   do aviso).
 
    ETIQUETAS (lista real do Quintas, 2026-09): nos vídeos do
    ZEN_OPTIONS, `ads: true` = vídeo COM anúncio; omissão ou
@@ -75,11 +101,58 @@ var VISIBLE_MS       = 10000;   // visível 10 segundos (pedido do Quintas)
 var FETCH_TIMEOUT_MS = 3000;    // rede lenta ≠ adblock
 var GLOBAL_TIMEOUT   = 5000;    // além disto: incerto → assume PROTEGIDO
 
+// (v21 · ARMADILHA — proposta do Quintas) Iscas múltiplas. Regra de
+// ouro: cada alvo é um recurso que um adblock está DESTINADO a
+// bloquear. Os domínios de rede têm regras BLANKET (||dominio^) nas
+// listas de filtros — bloqueiam QUALQUER tipo de pedido (fetch,
+// script, imagem...), ao contrário do adsbygoogle.js, cujo ficheiro-
+// -biblioteca passava livre no uBO/Firefox do Quintas.
+var VERSION = 'v21.1 (armadilha · no-referrer)';
+
+// Iscas cosméticas — 2 conjuntos de classes escondidas por CSS
+// genérico (EasyList & co.). O 1.º é o conjunto CLÁSSICO dos
+// detectores battle-tested (FuckAdBlock & afins — a referência da
+// indústria contra uBO); o 2.º é o nosso conjunto alargado da v20.
+var BAIT_CLASS_SETS = [
+    'pub_300x250 pub_300x250m pub_728x90 text-ad textAd text_ad ' +
+        'text_ads text-ads text-ad-links',
+    'adsbox ad-banner ads ad-placement ad-slot ad-zone advertisement ' +
+        'ad-unit ad-frame sponsored-ad'
+];
+
+// Iscas de rede (fetch) — os 3 primeiros são domínios blanket + o
+// googlesyndication (apanha bloqueadores do estilo Edge/MV3)
+var FETCH_BAITS = [
+    { name: 'adnxs.com',
+      url: 'https://ib.adnxs.com/px?id=caravela-' },
+    { name: 'quantserve.com',
+      url: 'https://pixel.quantserve.com/pixel;r=caravela-' },
+    { name: 'doubleclick.net',
+      url: 'https://static.doubleclick.net/instream/ad_status.js?caravela-' },
+    { name: 'googlesyndication.com',
+      url: 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?caravela-' }
+];
+
+// Iscas de rede (script) — ficheiros REAIS de publicidade (JS
+// válido: se NÃO houver adblock, carregam e executam 1× sem efeito
+// — gpt.js define window.googletag, adsbygoogle.js define a fila
+// window.adsbygoogle; não há slots de anúncio nesta página)
+var SCRIPT_BAITS = [
+    { name: 'googletagservices.com',
+      url: 'https://www.googletagservices.com/tag/js/gpt.js?caravela-' },
+    { name: 'doubleclick.net',
+      url: 'https://securepubads.g.doubleclick.net/tag/js/gpt.js?caravela-' },
+    { name: 'googlesyndication.com',
+      url: 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?caravela-' }
+];
+
+// Resultados detalhados por isca (ver ZenAds._debug())
+var debug = { cosmetic: null, fetch: {}, script: {} };
+
 // ── Estado ──
 var state = {
     brave: false,        // o browser é Brave
-    adblock: false,      // bait escondido OU fetch bloqueado OU script
-                         // bloqueado (v20)
+    adblock: false,      // alguma isca da armadilha bloqueada (v21)
     resolved: false,     // detecção concluída
     protected: null,     // null = pendente · true/false = resultado
     notified: false      // notificação já mostrada nesta sessão de página
@@ -103,49 +176,73 @@ function detectBrave() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 2. BAIT ELEMENT — as listas de filtros dos adblocks escondem estes
-//    seletores; se o elemento desaparecer do layout, há adblock
+// 2. ISCAS COSMÉTICAS — as listas de filtros dos adblocks escondem
+//    estes selectores por CSS genérico; se algum elemento
+//    desaparecer do layout, há adblock. (v21 · ARMADILHA) Agora
+//    são 2 elementos com conjuntos diferentes e DUAS verificações
+//    (250ms + 750ms).
 // ─────────────────────────────────────────────────────────────────────
+function baitHiddenNow(els) {
+    for (var i = 0; i < els.length; i++) {
+        var b = els[i];
+        var cs = window.getComputedStyle(b);
+        // getClientRects(): lista VAZIA quando o elemento não é
+        // renderizado de todo (display:none e variantes via user
+        // stylesheets das extensões — padrão dos detectores clássicos)
+        if (b.offsetHeight === 0 || b.offsetWidth === 0 ||
+            b.getClientRects().length === 0 ||
+            cs.display === 'none' || cs.visibility === 'hidden' ||
+            parseFloat(cs.opacity) === 0) return true;
+    }
+    return false;
+}
+
 function baitCheck() {
     return new Promise(function(resolve) {
-        var b = document.createElement('div');
-        // (v20) classes de isco clássicas + 4 extra (ad-unit, text-ad,
-        // ad-frame, sponsored-ad) — mais superfície para as listas
-        // de filtros esconderem (cobre bloqueadores só-cosméticos,
-        // e listas diferentes entre browsers/extensões)
-        b.className = 'adsbox ad-banner ads ad-placement ad-slot ' +
-                      'ad-zone pub_300x250 advertisement ad-unit ' +
-                      'text-ad ad-frame sponsored-ad';
-        b.style.cssText = 'position:absolute;left:-9999px;top:-9999px;' +
-                          'width:1px;height:1px;pointer-events:none;';
-        b.innerHTML = '&nbsp;';
-        (document.body || document.documentElement).appendChild(b);
-        setTimeout(function() {
-            var cs = window.getComputedStyle(b);
-            // (v20) getClientRects(): lista VAZIA quando o elemento
-            // não é renderizado de todo (display:none e variantes via
-            // user stylesheets das extensões — padrão nos detectores
-            // clássicos de adblock)
-            var hidden = b.offsetHeight === 0 || b.offsetWidth === 0 ||
-                         b.getClientRects().length === 0 ||
-                         cs.display === 'none' || cs.visibility === 'hidden' ||
-                         parseFloat(cs.opacity) === 0;
-            if (b.parentNode) b.parentNode.removeChild(b);
-            resolve(hidden);
+        var els = [];
+        for (var i = 0; i < BAIT_CLASS_SETS.length; i++) {
+            var b = document.createElement('div');
+            b.className = BAIT_CLASS_SETS[i];
+            b.style.cssText = 'position:absolute;left:-9999px;top:-9999px;' +
+                              'width:1px;height:1px;pointer-events:none;';
+            b.innerHTML = '&nbsp;';
+            (document.body || document.documentElement).appendChild(b);
+            els.push(b);
+        }
+        function cleanup() {
+            for (var j = 0; j < els.length; j++)
+                if (els[j].parentNode) els[j].parentNode.removeChild(els[j]);
+        }
+        setTimeout(function() {                      // 1.ª verificação
+            if (baitHiddenNow(els)) {
+                cleanup(); debug.cosmetic = { hidden: true, at: '250ms' };
+                resolve(true); return;
+            }
+            setTimeout(function() {                  // 2.ª (tardia)
+                var h = baitHiddenNow(els);
+                cleanup();
+                debug.cosmetic = { hidden: h, at: '750ms' };
+                resolve(h);
+            }, 500);
         }, 250);
     });
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 3. FETCH BAIT — domínio real de publicidade; os adblocks bloqueiam-no
-//    (o fetch rejeita IMEDIATAMENTE). Timeout/erro de rede NÃO conta
-//    (incerto ≠ bloqueado).
+// 3. ARMADILHA DE REDE (fetch) — (v21) 4 domínios de publicidade:
+//    adnxs.com, quantserve.com e doubleclick.net têm regras
+//    BLANKET (||dominio^) nas listas — bloqueiam QUALQUER tipo de
+//    pedido, fetch incluído; googlesyndication.com apanha os
+//    bloqueadores do estilo Edge/MV3. Timeout/erro de rede NÃO
+//    conta (incerto ≠ bloqueado).
 // ─────────────────────────────────────────────────────────────────────
-function fetchCheck() {
-    var url = 'https://pagead2.googlesyndication.com/pagead/js/' +
-              'adsbygoogle.js?caravela-detect=' + Date.now();
+function fetchOne(bait) {
     var ctrl = null, timer = null;
-    var opts = { method: 'GET', mode: 'no-cors', cache: 'no-store' };
+    // (v21.1 · PRIVACIDADE) no-referrer: o pedido NÃO transporta o
+    // domínio do site — o destinatário só vê um IP + User-Agent,
+    // sem saber de onde veio (menos do que qualquer pixel de GA)
+    var opts = { method: 'GET', mode: 'no-cors', cache: 'no-store',
+                 referrerPolicy: 'no-referrer' };
     try {
         if (window.AbortController) {
             ctrl = new AbortController();
@@ -156,15 +253,17 @@ function fetchCheck() {
         }
     } catch (e) {}
     try {
-        return fetch(url, opts).then(
+        return fetch(bait.url + Date.now(), opts).then(
             function() {                                    // carregou → sem bloqueio
                 if (timer) clearTimeout(timer);
+                debug.fetch[bait.name] = 'ok';
                 return false;
             },
             function() {                                    // falhou:
                 if (timer) clearTimeout(timer);
                 // abort por timeout = rede lenta, NÃO adblock
                 var timedOut = !!(ctrl && ctrl.signal && ctrl.signal.aborted);
+                debug.fetch[bait.name] = timedOut ? 'timeout' : 'blocked';
                 return !timedOut;
             }
         ).catch(function() { return false; });
@@ -173,52 +272,63 @@ function fetchCheck() {
     }
 }
 
+function fetchCheck() {
+    return Promise.all(FETCH_BAITS.map(fetchOne)).then(function(rs) {
+        for (var i = 0; i < rs.length; i++) if (rs[i]) return true;
+        return false;
+    });
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// 4. SCRIPT BAIT (v20 · BUG FIREFOX) — tag <script> REAL ao domínio
-//    de publicidade. No Firefox as extensões bloqueiam o adsbygoogle
-//    sobretudo como pedido de SCRIPT (regras $script das listas) e
-//    deixam passar o fetch/xmlhttprequest ao mesmo URL — por isso o
-//    FETCH BAIT sozinho não chega. Com a tag <script> o pedido corre
-//    no único tipo que TODOS os adblocks filtram (é a sua função
-//    primária: impedir os scripts de anúncio). onerror = bloqueio
-//    (ou erro de rede — mesma semântica do FETCH BAIT); onload =
-//    domínio acessível. Timeout NÃO conta (rede lenta ≠ adblock).
-//    A tag é REMOVIDA logo que resolve; se chegar a carregar, o
-//    adsbygoogle.js do Google executa UMA vez sem efeito (não há
-//    slots de anúncio nesta página) — e a página já depende do
-//    ecossistema YouTube/Google (iframe_api, gstatic, fonts).
-//    Requer CSP sem script-src restritivo — verificado no index.html
-//    (não há meta Content-Security-Policy; scripts de CDNs externos
-//    já carregam por todo o site).
+// 4. ARMADILHA DE REDE (script) — (v21) 3 tags <script> a ficheiros
+//    REAIS de publicidade (gpt.js ×2 + adsbygoogle.js). Bloquear
+//    scripts de anúncio é a função primária de qualquer adblock —
+//    é o tipo de pedido que TODOS filtram. onerror = bloqueio (ou
+//    erro de rede — mesma semântica do fetch); onload = acessível;
+//    timeout NÃO conta (rede lenta ≠ adblock). As tags são REMOVIDAS
+//    logo que resolvem; se chegarem a carregar (sem adblock),
+//    executam 1× sem efeito (a página já depende do ecossistema
+//    YouTube/Google: iframe_api, gstatic, fonts). Sem CSP no
+//    index.html (verificado).
 // ─────────────────────────────────────────────────────────────────────
-function scriptCheck() {
+function scriptOne(bait) {
     return new Promise(function(resolve) {
         var s = document.createElement('script');
-        s.src = 'https://pagead2.googlesyndication.com/pagead/js/' +
-                'adsbygoogle.js?caravela-detect=' + Date.now();
+        s.src = bait.url + Date.now();
         s.async = true;
+        // (v21.1 · PRIVACIDADE) sem referer — ver nota no fetchOne
+        s.referrerPolicy = 'no-referrer';
         var done = false, to = null;
-        function finish(blocked) {
+        function finish(blocked, why) {
             if (done) return;
             done = true;
             if (to) clearTimeout(to);
             s.onload = s.onerror = null;
             if (s.parentNode) s.parentNode.removeChild(s);
+            debug.script[bait.name] = why;
             resolve(blocked);
         }
-        to = setTimeout(function() { finish(false); },
+        to = setTimeout(function() { finish(false, 'timeout'); },
                         FETCH_TIMEOUT_MS);   // rede lenta ≠ adblock
-        s.onload  = function() { finish(false); };  // carregou → acessível
-        s.onerror = function() { finish(true);  };  // falhou  → bloqueio
+        s.onload  = function() { finish(false, 'ok');      };
+        s.onerror = function() { finish(true,  'blocked');  };
         (document.body || document.documentElement).appendChild(s);
+    });
+}
+
+function scriptCheck() {
+    return Promise.all(SCRIPT_BAITS.map(scriptOne)).then(function(rs) {
+        for (var i = 0; i < rs.length; i++) if (rs[i]) return true;
+        return false;
     });
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // COMBINAÇÃO — "protegido" = Brave OU adblock. Resolve CEDO se
-// qualquer via der positivo (o Brave resolve quase instantâneo; um
-// adblock bloqueia o fetch/script em milissegundos). Nada conclusivo a
-// tempo → protegido (princípio: nunca limitar por incerteza).
+// qualquer isca der positivo (o Brave resolve quase instantâneo; um
+// adblock bloqueia as iscas de rede em milissegundos). Nada
+// conclusivo a tempo → protegido (princípio: nunca limitar por
+// incerteza).
 // ─────────────────────────────────────────────────────────────────────
 var readyResolve;
 var readyPromise = new Promise(function(res) { readyResolve = res; });
@@ -386,6 +496,21 @@ window.ZenAds = {
     },
     // (debug/testes) dispara a notificação manualmente
     _notify: showNotification,
+    // (v21) diagnóstico do dono — resultado de CADA isca. A versão
+    // confirma que o ficheiro novo está vivo (revela cache antiga)
+    _debug: function() {
+        return {
+            version:     VERSION,
+            forced:      forcedMode(),
+            isResolved:  state.resolved,
+            isProtected: state.protected !== false,
+            isBrave:     !!state.brave,
+            hasAdblock:  !!state.adblock,
+            cosmetic:    debug.cosmetic,
+            fetch:       debug.fetch,
+            script:      debug.script
+        };
+    },
     _state: state
 };
 
