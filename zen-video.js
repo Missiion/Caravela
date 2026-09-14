@@ -886,6 +886,7 @@ const OVERSAMPLE_OK = (function() {
     } catch (e) { return false; }
 })();
 let lastPlayerPx = null;    // diagnóstico (qualityInfo → playerPx)
+let lastRenderPx = null;    // (v22.1) tamanho VISUAL pós-scale
 
 // Cobre o ecrã com 16:9 (o tamanho exacto é aplicado em px para os dois slots)
 function sizeCovers() {
@@ -896,10 +897,24 @@ function sizeCovers() {
     if (h < H) { h = H; w = H * AR; }
     const k = OVERSAMPLE_OK ? PLAYER_OVERSAMPLE : 1;   // (v22)
     lastPlayerPx = [Math.round(w * k), Math.round(h * k)];
-    coverEl('A').style.width  = lastPlayerPx[0] + 'px';
-    coverEl('A').style.height = lastPlayerPx[1] + 'px';
-    coverEl('B').style.width  = lastPlayerPx[0] + 'px';
-    coverEl('B').style.height = lastPlayerPx[1] + 'px';
+    lastRenderPx = [Math.round(w), Math.round(h)];
+    // (v22.1 · LIÇÃO DE GEOMETRIA — o "zoom" que o Quintas viu na v22
+    // nua) O conteúdo do iframe É o vídeo: com o wrap a 4320px, o
+    // ecrã mostrava só o CENTRO dele (crop 2.25×). A combinação
+    // certa: LAYOUT grande + RENDER pequeno — width/height ficam a
+    // k× (é o que o ABR lê: TODAS as medições lá dentro do iframe
+    // são em px de layout, e transforms do PAI não as afetam
+    // minimamente) e o scale(1/k) devolve o desenho ao rectângulo
+    // cover de sempre (translate(-50%,-50%) já centrava; o scale
+    // corre sobre o transform-origin centro → w×h no ecrã, SEM
+    // crop e SEM distorção de ratio). Olho vê w×h · ABR vê w·k×h·k.
+    const tf = 'translate(-50%, -50%) scale(' + (1 / k) + ')';
+    ['A', 'B'].forEach(function(s) {
+        const el = coverEl(s);
+        el.style.width    = lastPlayerPx[0] + 'px';
+        el.style.height   = lastPlayerPx[1] + 'px';
+        el.style.transform = tf;
+    });
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -2943,13 +2958,16 @@ window._zenCtrl = {
             }
         } catch (e) {}
         return {
-            ver: 'v22',                   // confirma ficheiro vivo (cache?)
+            ver: 'v22.1',                 // confirma ficheiro vivo (cache?)
             mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
             activeSlot: activeSlot,
-            playerPx: lastPlayerPx,       // (v22) janela do player (px CSS) —
-                                          // O sinal que o ABR do YouTube usa
-                                          // para escolher o tecto (~4320×2430
-                                          // em desktop = 4K libertado)
+            playerPx: lastPlayerPx,       // (v22) janela de LAYOUT do player
+                                          // — o que o ABR do YouTube vê
+                                          // (~4320×2430 = 4K libertado)
+            renderPx: lastRenderPx,       // (v22.1) tamanho VISUAL pós-scale
+                                          // — o rectângulo cover real no ecrã
+                                          // (~1920×1080; se diferir muito de
+                                          // playerPx/k, o scale não aplicou)
             playing: cur,                 // qualidade que o player serve AGORA
             best: bestAvailable(p),       // (v21.3) o TOPO do que o vídeo
                                           // oferece (sem 'auto') — playing
