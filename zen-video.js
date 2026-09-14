@@ -317,12 +317,15 @@ const ZEN_OPTIONS = [
         hasAudio: true,
         loadingAnim: 'blackhole',  // flutuar + anel de acreção a rodar
         videos: [
-            // (v16) SEM alternativas por agora (limite de 24h de upload
-            // do YouTube) → na face desprotegida a categoria fica
-            // ESCONDIDA do carrossel até haver re-uploads (as etiquetas
-            // chegam, o filtro actualiza-se sozinho — sem mudar código)
-            { id: '8fhTHBh_iqk', ads: true },               // completo
-            { id: 'wnhvanMdx4s', ads: true },               // completo
+            // (v18 · DUAS FACES) 1 de 2 vídeos já tem alternativa (os
+            // re-uploads foram atrasados pelo limite de uploads do
+            // YouTube) → a categoria VOLTOU a aparecer na face
+            // desprotegida: 8fhTHBh_iqk toca (via alternativa); o
+            // wnhvanMdx4s fica fora da queue até chegar o seu
+            // re-upload (acrescentar `alt` — a queue actualiza-se
+            // sozinha, sem mudar código)
+            { id: '8fhTHBh_iqk', ads: true, alt: 'ZwO1vTAUS4M' },   // completo
+            { id: 'wnhvanMdx4s', ads: true },               // completo — sem alternativa ainda
         ]
     },
     // LAREIRA — categoria de fogueira/lareira (v11). SUBSTITUI o ÚLTIMO
@@ -340,12 +343,15 @@ const ZEN_OPTIONS = [
         hasAudio: true,
         loadingAnim: 'fire',  // chamas a bailar durante a espera
         videos: [
-            // (v16) SEM alternativas por agora — categoria escondida na
-            // face desprotegida (mesma razão do Space acima)
-            { id: 'Ux8xAuQBdkk', ads: true },               // completo
-            { id: 'FJz0jEmoNAQ', ads: true },               // completo
-            { id: 'VZBlOqt6cB4', ads: true },               // completo
-            { id: '1ieNfIk3Ruo', ads: true },               // completo
+            // (v18 · DUAS FACES) 2 de 4 vídeos já têm alternativa → a
+            // categoria VOLTOU a aparecer na face desprotegida: só
+            // Ux8xAuQBdkk e VZBlOqt6cB4 tocam (via alternativas); os
+            // outros dois ficam fora da queue até chegarem os
+            // re-uploads (mesma razão do Space acima)
+            { id: 'Ux8xAuQBdkk', ads: true, alt: '2mcQrdiUt4s' },   // completo
+            { id: 'FJz0jEmoNAQ', ads: true },               // completo — sem alternativa ainda
+            { id: 'VZBlOqt6cB4', ads: true, alt: 'hB2R99KFSMM' },   // completo
+            { id: '1ieNfIk3Ruo', ads: true },               // completo — sem alternativa ainda
         ]
     },
 ];
@@ -671,8 +677,9 @@ function coverEl(s)     { return document.getElementById('vidCover' + s); }
 function hubEl()        { return document.getElementById('parallax-box'); }
 function firstFunctional() {
     // (v16 · DUAS FACES) salta categorias indisponíveis para o
-    // utilizador actual (face desprotegida sem vídeos — ex.: Space
-    // e Fireplace enquanto não houver re-uploads)
+    // utilizador actual (face desprotegida sem vídeos — v18: já não
+    // há casos actuais, todas as categorias têm ≥1 alternativa; a
+    // salvaguarda mantém-se para o futuro)
     for (let i = 0; i < ZEN_OPTIONS.length; i++)
         if (ZEN_OPTIONS[i].functional && categoryAllowedFor(ZEN_OPTIONS[i]))
             return ZEN_OPTIONS[i];
@@ -2616,10 +2623,11 @@ buildCarouselButtons();
 
 // (v16 · DUAS FACES) Remove do carrossel as categorias SEM NENHUM
 // vídeo disponível para a face desprotegida (todos os vídeos com
-// anúncio e SEM alternativa — ex.: Space e Fireplace enquanto os
-// re-uploads não existirem). Corre UMA vez, mal a detecção confirma
-// desprotecção (ver onUnprotected, no fim do ficheiro) — e NUNCA na
-// face protegida: quem tem adblock/Brave vê o carrossel COMPLETO.
+// anúncio e SEM alternativa — v18: já não há casos actuais, todas
+// as categorias têm ≥1 alternativa; a mecânica fica para o futuro).
+// Corre UMA vez, mal a detecção confirma desprotecção (ver
+// onUnprotected, no fim do ficheiro) — e NUNCA na face protegida:
+// quem tem adblock/Brave vê o carrossel COMPLETO.
 //   • o ZEN_OPTIONS perde as opções vazias e os botões são
 //     RECONSTRUÍDOS (buildCarouselButtons) — a correspondência
 //     ZEN_OPTIONS[i] ↔ track.children[i] mantém-se 1:1;
@@ -2627,8 +2635,9 @@ buildCarouselButtons();
 //     detecção concluir) desliga o zen limpo (a queue já não tem
 //     nada para este utilizador);
 //   • o refresh repõe tudo (a detecção volta a correr do zero).
-// Quando as alternativas em falta chegarem (re-uploads do canal do
-// Quintas), basta acrescentar `alt` aos vídeos — as categorias
+// (v18 — confirmado na prática: Space e Fireplace reapareceram
+// assim que as 1.ªs alternativas chegaram) Quando faltarem
+// alternativas, basta acrescentar `alt` aos vídeos — as categorias
 // reaparecem SOZINHAS, sem tocar no código.
 let zenAdsFilterDone = false;
 function applyZenAdsCategoryFilter() {
