@@ -719,6 +719,17 @@ function videoModeOn()  { return document.body.classList.contains('zen-video-mod
 // rejeitados e anti-fingerprinting, o ABR do YouTube começa nos
 // 240/360p e sobe devagar — o site PEDIU sempre o máximo, a decisão
 // final é do lado de lá; não existe API para forçar mais do que isto.)
+// (v22 · SOBREDIMENSIONAMENTO DO PLAYER — veredicto do teste do
+// escudo do Quintas: desligado E na mesma hd1080 → o governador não
+// é o anti-fingerprinting, é a JANELA do iframe) O ABR dos embeds
+// mede a janela do player em px CSS: numa janela ~1920px serve
+// 1080p e considera-se pago — o vídeo TER 4K não entra na conta.
+// Sem engrenagem manual nos embeds e com o hint morto, a ÚNICA
+// alavanca real de um site é dar ao player uma janela MAIOR do que
+// o ecrã (ver PLAYER_OVERSAMPLE junto de sizeCovers): mesmo rectân-
+// gulo 16:9 centrado, excesso cortado no overflow hidden → ZERO
+// diferença visual, mas o ABR passa a ver ~4300px e liberta o
+// MÁXIMO DO VÍDEO quando a rede o permitir.
 const Q_ORDER = ['small','medium','large','hd720','hd1080','hd1440','hd2160','highres'];
 function qRank(q) { const i = Q_ORDER.indexOf(q); return i < 0 ? 0 : i; }
 
@@ -854,6 +865,28 @@ function recoverQualityIfStable() {
 // O preço disto: um timer de 10s que quase sempre faz RETURN imediato
 setInterval(recoverQualityIfStable, 10000);
 
+// (v22 · SOBREDIMENSIONAMENTO DO PLAYER) O ABR do YouTube mede a
+// JANELA do iframe (px CSS) para escolher o tecto de qualidade —
+// com os slots ao tamanho exacto do ecrã, um monitor 1080p (ou 4K
+// com scaling 200% → CSS 1920) ensina-o a que "1080p chega".
+// Multiplicamos os slots por 2.25 (desktop com ponteiro fino):
+// o MESMO rectângulo 16:9 centrado (o excesso corta no overflow
+// hidden da camada — zero diferença visual), mas a janela interna
+// do player passa a ~4300px → o ABR liberta o máximo do vídeo
+// (hd2160/highres) assim que a largura de banda o permita. A folga
+// acima dos 3840px evita o arredondamento para baixo no limiar
+// exacto do 4K. Mobile/touch fica a 1× — pedir 4K a um telefone é
+// queimar bateria/dados sem ganho visível num ecrã pequeno.
+const PLAYER_OVERSAMPLE = 2.25;
+const OVERSAMPLE_OK = (function() {
+    try {
+        return !!(window.matchMedia &&
+                  window.matchMedia('(pointer: fine)').matches &&
+                  Math.min(screen.width || 0, screen.height || 0) >= 700);
+    } catch (e) { return false; }
+})();
+let lastPlayerPx = null;    // diagnóstico (qualityInfo → playerPx)
+
 // Cobre o ecrã com 16:9 (o tamanho exacto é aplicado em px para os dois slots)
 function sizeCovers() {
     const W = layer.clientWidth, H = layer.clientHeight;
@@ -861,8 +894,12 @@ function sizeCovers() {
     const AR = 16 / 9;
     let w = W, h = W / AR;
     if (h < H) { h = H; w = H * AR; }
-    coverEl('A').style.width  = w + 'px';  coverEl('A').style.height = h + 'px';
-    coverEl('B').style.width  = w + 'px';  coverEl('B').style.height = h + 'px';
+    const k = OVERSAMPLE_OK ? PLAYER_OVERSAMPLE : 1;   // (v22)
+    lastPlayerPx = [Math.round(w * k), Math.round(h * k)];
+    coverEl('A').style.width  = lastPlayerPx[0] + 'px';
+    coverEl('A').style.height = lastPlayerPx[1] + 'px';
+    coverEl('B').style.width  = lastPlayerPx[0] + 'px';
+    coverEl('B').style.height = lastPlayerPx[1] + 'px';
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -2906,9 +2943,13 @@ window._zenCtrl = {
             }
         } catch (e) {}
         return {
-            ver: 'v21.3',                 // confirma ficheiro vivo (cache?)
+            ver: 'v22',                   // confirma ficheiro vivo (cache?)
             mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
             activeSlot: activeSlot,
+            playerPx: lastPlayerPx,       // (v22) janela do player (px CSS) —
+                                          // O sinal que o ABR do YouTube usa
+                                          // para escolher o tecto (~4320×2430
+                                          // em desktop = 4K libertado)
             playing: cur,                 // qualidade que o player serve AGORA
             best: bestAvailable(p),       // (v21.3) o TOPO do que o vídeo
                                           // oferece (sem 'auto') — playing
