@@ -2906,10 +2906,16 @@ window._zenCtrl = {
             }
         } catch (e) {}
         return {
-            ver: 'v21.2',                 // confirma ficheiro vivo (cache?)
+            ver: 'v21.3',                 // confirma ficheiro vivo (cache?)
             mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
             activeSlot: activeSlot,
             playing: cur,                 // qualidade que o player serve AGORA
+            best: bestAvailable(p),       // (v21.3) o TOPO do que o vídeo
+                                          // oferece (sem 'auto') — playing
+                                          // < best com mode 'max' = o
+                                          // YOUTUBE está a servir MENOS do
+                                          // que o site lhe pediu (decisão
+                                          // dele, não nossa)
             peakRank: slotPeakRank[activeSlot],  // pico atingido (subida conta)
             available: levels             // o que ESTE vídeo oferece
         };
