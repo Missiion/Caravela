@@ -565,8 +565,11 @@
                  descarregado automaticamente; tudo online → mensagem
                  simples (lógica no zen-video.js; painel #zenCheckOverlay) -->
             <button class="mod-btn" id="modBtnCheckVideos">&#128269; Verify All Videos</button>
-            <div class="mod-tab-title" style="margin-top:6px">&#9881; Config Panel</div>
-            <button class="mod-btn" id="modBtnCfgPanel">&#128396; Toggle Layout Editor</button>
+            <!-- (v18) — O 5.º painel do Mod Tab (&#9881; Config Panel →
+                 "Toggle Layout Editor") foi REMOVIDO por completo:
+                 feature obsoleta, apagada deste ficheiro (painel +
+                 script inline), do game-launcher.js e do
+                 game-launcher.css. -->
         </div>
     </div>
 
@@ -757,18 +760,9 @@
 
     <!-- GAME LAUNCHER — ecrã completo para novos jogos -->
     <script src="game-launcher.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            var btn = document.getElementById('modBtnCfgPanel');
-            if (btn) {
-                btn.addEventListener('click', function () {
-                    if (typeof window._cfgTogglePanel === 'function') window._cfgTogglePanel();
-                    var modTab = document.getElementById('modTab');
-                    if (modTab) modTab.classList.remove('open');
-                });
-            }
-        });
-    </script>
+    <!-- (v18) — O script inline que ligava o 5.º botão do Mod Tab
+         ao Layout Editor foi removido juntamente com a feature
+         (ver game-launcher.js v6 / game-launcher.css v5). -->
 
     <!-- SUIKA GAME -->
     <script src="games-zone.js"></script>

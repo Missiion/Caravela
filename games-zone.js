@@ -191,6 +191,15 @@
             if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
         }
 
+        // ⚠ NOTA (mantido as-is por decisão do Quintas): cada chamada de
+        // initPacCanvas() — uma por reabertura da Games Zone — adiciona um
+        // novo listener de 'resize' à window. Os listeners antigos ficam
+        // no-op (o seu rafId foi cancelado pelo stop() da instância
+        // anterior), por isso nunca deu problemas na prática. Deve-se
+        // manter em mente caso venham a surgir problemas relacionados
+        // com isto: é um leak leve que cresce com o número de reaberturas
+        // (fix futuro óbvio: flag _resizeBound no módulo, ou remover o
+        // listener antigo dentro do stop()).
         window.addEventListener('resize', () => { if (rafId) { resize(); startChase(); } });
 
         return { start, stop };

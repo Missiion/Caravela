@@ -1222,6 +1222,23 @@ async function lbAddScore(pts) {
 }
 
 // Renderizar leaderboard com dados do Firebase
+// [B2] Escape de HTML — os nomes/datas vêm do Firestore (via bridge do
+// pai) e o maxlength=16 do input de assinatura é só client-side: uma
+// escrita directa na base de dados contorna o limite e pode injectar
+// markup. Tudo o que entra em innerHTML passa por _esc() antes — mesmo
+// modelo do escapeHtml() do zen-video.js. O score também é sanitizado:
+// se não for número válido (adulterado na Firestore), mostra-se o valor
+// cru ESCAPADO em vez de rebentar em toLocaleString().
+function _esc(s) {
+  return String(s).replace(/[&<>"']/g, function(c) {
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+  });
+}
+function _fmtScore(s) {
+  const n = Number(s);
+  return isNaN(n) ? _esc(s) : n.toLocaleString('pt-PT');
+}
+
 async function lbRender() {
   const list = document.getElementById('leaderList');
   list.innerHTML = '<div class="lb-empty">' + (_fnT.fnLoading || 'LOADING...') + '</div>';
@@ -1246,14 +1263,15 @@ async function lbRender() {
       ? `<div class="lb-medal">${medals[i]}</div>`
       : `<div class="lb-rank">#${i+1}</div>`;
 
-    const dateStr = e.date ? `<div class="lb-date">${e.date}</div>` : '';
+    // [B2] nome e data escapados — nunca injectar cru em innerHTML
+    const dateStr = e.date ? `<div class="lb-date">${_esc(e.date)}</div>` : '';
     card.innerHTML = `
       ${left}
       <div class="lb-info">
-        <div class="lb-name">${e.name.toUpperCase()}</div>
+        <div class="lb-name">${_esc(String(e.name || '???').toUpperCase())}</div>
         ${dateStr}
       </div>
-      <div class="lb-score">${e.score.toLocaleString('pt-PT')}</div>
+      <div class="lb-score">${_fmtScore(e.score)}</div>
     `;
     list.appendChild(card);
   });

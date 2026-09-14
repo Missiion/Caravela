@@ -555,10 +555,31 @@
         });
     }
 
-    if (window._sigFirebaseReady) {
+    // ── Arranque ──────────────────────────────────────────────
+    // [B3] Rede de segurança: normalmente o módulo Firebase (inline no
+    // index.html) dispara 'sig-firebase-ready' e o checkSigned() corre
+    // logo a seguir. Mas se o CDN do Firebase NUNCA chegar (offline,
+    // adblock agressivo, rede lenta), esse evento não dispara e a zona
+    // de assinaturas ficava MORTA — sem idle typewriter, sem input,
+    // sem "Welcome back". O timeout abaixo (8s, a mesma janela usada
+    // pelos bridges do Suika/FN) arranca o sistema em MODO DEGRADADO:
+    // funciona localmente (idle, input, estado locked via localStorage);
+    // os envios continuam à espera do Firebase dentro do
+    // resolveUniqueName()/sendToFirebase(), que já têm os seus próprios
+    // timeouts. A flag _sigStarted garante que só arranca UMA vez,
+    // chegue primeiro o evento ou o timeout.
+    let _sigStarted = false;
+    function _sigStart() {
+        if (_sigStarted) return;
+        _sigStarted = true;
         checkSigned();
+    }
+
+    if (window._sigFirebaseReady) {
+        _sigStart();
     } else {
-        document.addEventListener('sig-firebase-ready', checkSigned);
+        document.addEventListener('sig-firebase-ready', _sigStart);
+        setTimeout(_sigStart, 8000);
     }
 
 })();

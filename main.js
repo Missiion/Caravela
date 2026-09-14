@@ -604,7 +604,24 @@ volumeSlider.oninput = (e) => {
     musicAudio.volume = e.target.value / 100;
     const pct = e.target.value + '%';
     e.target.style.background = `linear-gradient(to right, var(--cor-sombra) ${pct}, rgba(255,255,255,0.15) ${pct})`;
+    // [Q3] Persistir o volume da música entre sessões
+    try { localStorage.setItem('hub_music_volume', e.target.value); } catch(err) {}
 };
+
+// [Q3] Restaurar o volume da última sessão (default: 15, igual ao
+// value=15 do input no index.html). Corre uma única vez no arranque:
+// aplica o valor guardado ao slider, ao <audio> e repinta o gradient
+// para o slider não aparecer com o fill do default quando o valor
+// guardado é outro. As teclas ↑/↓ passam pelo oninput (dispatchEvent),
+// por isso também gravam.
+(function restoreMusicVolume() {
+    let v = parseInt(localStorage.getItem('hub_music_volume'), 10);
+    if (isNaN(v) || v < 0 || v > 100) v = 15;
+    volumeSlider.value = v;
+    musicAudio.volume  = v / 100;
+    const pct = v + '%';
+    volumeSlider.style.background = `linear-gradient(to right, var(--cor-sombra) ${pct}, rgba(255,255,255,0.15) ${pct})`;
+})();
 
 // Toggle button + animated status text
 const vhsToggleBtn  = document.getElementById('vhsToggleBtn');
@@ -911,10 +928,35 @@ playerStage.addEventListener('wheel', (e) => {
         }
     });
 
-    // Volume sliders
-    document.getElementById('sndVolRain').addEventListener('input',  (e) => { audio.volume       = e.target.value / 100; });
-    document.getElementById('sndVolDryer').addEventListener('input', (e) => { dryerAudio.volume  = e.target.value / 100; });
-    document.getElementById('sndVolWind').addEventListener('input',  (e) => { windAudio.volume   = e.target.value / 100; });
+    // ── Volume sliders ─────────────────────────────────────────
+    // [Q3] PERSISTÊNCIA: os volumes dos sons ambiente (chuva/secador/
+    // vento) guardam-se em localStorage e são restaurados no arranque.
+    // Defaults: 10 (0.10), igual aos value="10" dos inputs no index.html.
+    // As chaves seguem o mesmo padrão snake_case das restantes
+    // (hub_theme, hub_lang, night_mode, ...).
+    function _sndInitVolume(sliderId, audioEl, lsKey) {
+        let v = parseInt(localStorage.getItem(lsKey), 10);
+        if (isNaN(v) || v < 0 || v > 100) v = 10;
+        const slider = document.getElementById(sliderId);
+        if (slider) slider.value = v;
+        audioEl.volume = v / 100;
+    }
+    _sndInitVolume('sndVolRain',  audio,      'hub_rain_volume');
+    _sndInitVolume('sndVolDryer', dryerAudio, 'hub_dryer_volume');
+    _sndInitVolume('sndVolWind',  windAudio,  'hub_wind_volume');
+
+    document.getElementById('sndVolRain').addEventListener('input',  (e) => {
+        audio.volume = e.target.value / 100;
+        try { localStorage.setItem('hub_rain_volume',  e.target.value); } catch(err) {}
+    });
+    document.getElementById('sndVolDryer').addEventListener('input', (e) => {
+        dryerAudio.volume = e.target.value / 100;
+        try { localStorage.setItem('hub_dryer_volume', e.target.value); } catch(err) {}
+    });
+    document.getElementById('sndVolWind').addEventListener('input',  (e) => {
+        windAudio.volume = e.target.value / 100;
+        try { localStorage.setItem('hub_wind_volume',  e.target.value); } catch(err) {}
+    });
 
     window.syncSoundPanel = function() {
         document.getElementById('sndWrapRain').classList.toggle('sound-on',  isStorming);
@@ -1369,10 +1411,27 @@ document.addEventListener('visibilitychange', () => {
 // =========================================
 // KEYBOARD CONTROLS
 // =========================================
+// [B1] GUARDA ANTI-CONFLITO — o Suika é um painel DOM (NÃO iframe),
+// por isso os seus listeners de teclado e os deste player vivem no
+// MESMO document e reagiam às mesmas teclas ao mesmo tempo: jogar Suika
+// com o teclado mudava a faixa (←/→), o volume (↑/↓) e dava play/pause
+// (Space) na música. Com esta guarda, os atalhos de música ficam
+// suspensos ENQUANTO o Suika ou um jogo em iframe (body.game-open)
+// estiverem abertos — as duas features continuam intactas, cada uma
+// com exclusividade no seu contexto. A Games Zone é só um menu de
+// cards (não lê teclado), por isso lá os atalhos continuam a funcionar.
+function musicHotkeysBlocked() {
+    const suika = document.getElementById('suikaSection');
+    if (suika && suika.style.display === 'flex') return true;   // Suika aberto
+    if (document.body.classList.contains('game-open')) return true; // jogo em iframe
+    return false;
+}
+
 document.addEventListener('keydown', function(e) {
     // Ignorar se o utilizador estiver a escrever num input/textarea
     const tag = document.activeElement && document.activeElement.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (musicHotkeysBlocked()) return;
 
     switch (e.code) {
         case 'Space':

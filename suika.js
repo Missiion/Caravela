@@ -713,6 +713,23 @@
     // ── Leaderboard (Firebase) ────────────────────────────────
     let _lbCache = null;
 
+    // [B2] Escape de HTML — os nomes vêm do Firestore e o maxlength=16
+    // do input é só client-side: uma escrita directa na base de dados
+    // (API do Firebase) contorna o limite e pode injectar markup/atributos.
+    // Tudo o que entra em innerHTML passa por aqui antes — mesmo modelo
+    // do escapeHtml() do zen-video.js. O score também é sanitizado: se
+    // não for número válido (adulterado na Firestore), mostra-se o valor
+    // cru ESCAPADO em vez de rebentar em toLocaleString().
+    function _esc(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function _fmtScore(s) {
+        const n = Number(s);
+        return isNaN(n) ? _esc(s) : n.toLocaleString();
+    }
+
     async function renderLeaderboard(filter) {
         const list = document.getElementById("suikaLbList");
         if (!list) return;
@@ -743,7 +760,8 @@
             const rank = _lbCache.indexOf(e);
             const medal = rank === 0 ? "🥇" : rank === 1 ? "🥈" : rank === 2 ? "🥉" : "#"+(rank+1);
             const cls   = rank === 0 ? "suika-lb-gold" : rank === 1 ? "suika-lb-silver" : rank === 2 ? "suika-lb-bronze" : "";
-            return `<div class="suika-lb-row ${cls}"><span class="suika-lb-rank">${medal}</span><span class="suika-lb-name">${e.name.toUpperCase()}</span><span class="suika-lb-score">${e.score.toLocaleString()}</span></div>`;
+            // [B2] nome e score escapados — nunca injectar cru em innerHTML
+            return `<div class="suika-lb-row ${cls}"><span class="suika-lb-rank">${medal}</span><span class="suika-lb-name">${_esc(e.name.toUpperCase())}</span><span class="suika-lb-score">${_fmtScore(e.score)}</span></div>`;
         }).join("");
     }
 

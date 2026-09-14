@@ -329,7 +329,7 @@
             fnRestartConfirm:    'MESMO?',
             fnPlayAgain:         'JOGAR DE NOVO',
             fnHsNotice:          '🏆 NOVO RECORDE!',
-            fnScoreLabel:        'SCORE',
+            fnScoreLabel:        'PONTOS',
             fnFinalScore:        'PONTUAÇÃO',
             fnBestScore:         'RECORDE',
             fnLoading:           'A CARREGAR...',

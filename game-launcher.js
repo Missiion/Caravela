@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════════
-   GAME-LAUNCHER.JS  — v5
+   GAME-LAUNCHER.JS  — v6
+
+   v6 — LAYOUT EDITOR REMOVIDO por completo (feature obsoleta,
+   decisão do Quintas): secção CONFIG PANEL, CFG_DEFAULTS, _cfgState,
+   cfgApply(), buildConfigPanel() e window._cfgTogglePanel() foram
+   apagados deste ficheiro, do game-launcher.css, do index.html (botão
+   do Mod Tab + script inline) e de todas as menções. O launcher volta
+   ao visual base do CSS (glassmorphism blur 18px, título 0.5rem,
+   ícones de som 30px) — editável à mão pelas variáveis do CSS.
 
    COMO ADICIONAR UM NOVO JOGO:
    1. Coloca o HTML em  games/nome.html
@@ -179,7 +187,6 @@
         _freezeNight();
         document.body.classList.add('game-open');
         overlay.classList.add('gl-active');
-        cfgApply(_cfgState);
         sendLangToFrame();
     }
 
@@ -201,179 +208,6 @@
         _cleanupRain();
         _resumeNight();
         document.body.classList.remove('game-open');
-    }
-
-    /* ══════════════════════════════════════════════════════════
-       CONFIG PANEL
-       — Sem persistência: estado em memória, reset ao recarregar
-       — Sempre presente no DOM mas INVISÍVEL por defeito (cfg-hidden)
-       — Ativado apenas via window._cfgTogglePanel() no mod panel
-       — Acessível em qualquer página (não limitado ao jogo)
-    ══════════════════════════════════════════════════════════ */
-
-    const CFG_DEFAULTS = {
-        soundSize:    25,
-        soundGap:      8,
-        soundOffsetY:  0,
-        titleSize:  0.75,
-        titleSpacing: 5.0,
-        titleOffsetY:  4,
-        bgBlur:        4,
-        bgDark:        0,
-    };
-
-    let _cfgState = Object.assign({}, CFG_DEFAULTS);
-
-    function cfgApply(cfg) {
-        if (!overlay) return;
-        overlay.style.backdropFilter       = 'blur(' + cfg.bgBlur + 'px) saturate(1.4)';
-        overlay.style.webkitBackdropFilter = 'blur(' + cfg.bgBlur + 'px) saturate(1.4)';
-        overlay.style.background           = 'rgba(0,0,0,' + (cfg.bgDark / 100) + ')';
-        if (soundDock) {
-            soundDock.style.setProperty('--tamanho-nuvem', cfg.soundSize + 'px');
-            soundDock.style.gap       = cfg.soundGap + 'px';
-            soundDock.style.marginTop = cfg.soundOffsetY + 'px';
-        }
-        if (gameTitle) {
-            gameTitle.style.fontSize      = cfg.titleSize + 'rem';
-            gameTitle.style.letterSpacing = cfg.titleSpacing + 'px';
-            gameTitle.style.marginTop     = cfg.titleOffsetY + 'px';
-        }
-    }
-
-    function buildConfigPanel() {
-        const cfg = _cfgState;
-
-        const tab = document.createElement('div');
-        tab.id    = 'glConfigTab';
-        tab.classList.add('cfg-hidden'); /* invisível por defeito */
-
-        const toggle = document.createElement('button');
-        toggle.id    = 'glConfigToggle';
-        toggle.innerHTML = '<span class="cfg-icon">⚙</span>EDITOR';
-
-        const panel = document.createElement('div');
-        panel.id    = 'glConfigPanel';
-
-        const inner = document.createElement('div');
-        inner.id    = 'glConfigInner';
-
-        inner.innerHTML = `
-            <div class="cfg-panel-title">⚙ Config</div>
-            <div class="cfg-section">
-                <div class="cfg-section-label">🔊 Sons do jogo</div>
-                <div class="cfg-row">
-                    <span class="cfg-label">Tamanho</span>
-                    <input class="cfg-slider" type="range" id="cfgSoundSize" min="16" max="52" step="1" value="${cfg.soundSize}">
-                    <span class="cfg-value" id="cfgSoundSizeVal">${cfg.soundSize}px</span>
-                </div>
-                <div class="cfg-row">
-                    <span class="cfg-label">Espaço</span>
-                    <input class="cfg-slider" type="range" id="cfgSoundGap" min="0" max="24" step="1" value="${cfg.soundGap}">
-                    <span class="cfg-value" id="cfgSoundGapVal">${cfg.soundGap}px</span>
-                </div>
-                <div class="cfg-row">
-                    <span class="cfg-label">Posição Y</span>
-                    <input class="cfg-slider" type="range" id="cfgSoundOffsetY" min="-20" max="20" step="1" value="${cfg.soundOffsetY}">
-                    <span class="cfg-value" id="cfgSoundOffsetYVal">${cfg.soundOffsetY}px</span>
-                </div>
-            </div>
-            <div class="cfg-section">
-                <div class="cfg-section-label">🏷 Título</div>
-                <div class="cfg-row">
-                    <span class="cfg-label">Tamanho</span>
-                    <input class="cfg-slider" type="range" id="cfgTitleSize" min="0.2" max="1.4" step="0.05" value="${cfg.titleSize}">
-                    <span class="cfg-value" id="cfgTitleSizeVal">${cfg.titleSize}rem</span>
-                </div>
-                <div class="cfg-row">
-                    <span class="cfg-label">Espaçamento</span>
-                    <input class="cfg-slider" type="range" id="cfgTitleSpacing" min="0" max="14" step="0.5" value="${cfg.titleSpacing}">
-                    <span class="cfg-value" id="cfgTitleSpacingVal">${cfg.titleSpacing}px</span>
-                </div>
-                <div class="cfg-row">
-                    <span class="cfg-label">Posição Y</span>
-                    <input class="cfg-slider" type="range" id="cfgTitleOffsetY" min="-16" max="16" step="1" value="${cfg.titleOffsetY}">
-                    <span class="cfg-value" id="cfgTitleOffsetYVal">${cfg.titleOffsetY}px</span>
-                </div>
-            </div>
-            <div class="cfg-section">
-                <div class="cfg-section-label">🌫 Fundo</div>
-                <div class="cfg-row">
-                    <span class="cfg-label">Blur</span>
-                    <input class="cfg-slider" type="range" id="cfgBgBlur" min="0" max="40" step="1" value="${cfg.bgBlur}">
-                    <span class="cfg-value" id="cfgBgBlurVal">${cfg.bgBlur}px</span>
-                </div>
-                <div class="cfg-row">
-                    <span class="cfg-label">Escuridão</span>
-                    <input class="cfg-slider" type="range" id="cfgBgDark" min="0" max="90" step="1" value="${cfg.bgDark}">
-                    <span class="cfg-value" id="cfgBgDarkVal">${cfg.bgDark}%</span>
-                </div>
-            </div>
-            <div style="padding: 0 16px;">
-                <button class="cfg-reset" id="cfgResetBtn">↺ Repor defaults</button>
-            </div>
-            <div class="cfg-footer">Temporário — reset ao recarregar a página.</div>
-        `;
-
-        panel.appendChild(inner);
-        tab.appendChild(toggle);
-        tab.appendChild(panel);
-        document.body.appendChild(tab);
-
-        toggle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            panel.classList.toggle('cfg-open');
-        });
-        document.addEventListener('click', (e) => {
-            if (!tab.contains(e.target)) panel.classList.remove('cfg-open');
-        });
-
-        function bindSlider(id, valId, unit, key, decimals) {
-            const slider = document.getElementById(id);
-            const valEl  = document.getElementById(valId);
-            if (!slider || !valEl) return;
-            slider.addEventListener('input', () => {
-                const v = parseFloat(slider.value);
-                _cfgState[key] = v;
-                valEl.textContent = v.toFixed(decimals) + unit;
-                cfgApply(_cfgState);
-            });
-        }
-
-        bindSlider('cfgSoundSize',    'cfgSoundSizeVal',    'px',  'soundSize',    0);
-        bindSlider('cfgSoundGap',     'cfgSoundGapVal',     'px',  'soundGap',     0);
-        bindSlider('cfgSoundOffsetY', 'cfgSoundOffsetYVal', 'px',  'soundOffsetY', 0);
-        bindSlider('cfgTitleSize',    'cfgTitleSizeVal',    'rem', 'titleSize',    2);
-        bindSlider('cfgTitleSpacing', 'cfgTitleSpacingVal', 'px',  'titleSpacing', 1);
-        bindSlider('cfgTitleOffsetY', 'cfgTitleOffsetYVal', 'px',  'titleOffsetY', 0);
-        bindSlider('cfgBgBlur',       'cfgBgBlurVal',       'px',  'bgBlur',       0);
-        bindSlider('cfgBgDark',       'cfgBgDarkVal',       '%',   'bgDark',       0);
-
-        document.getElementById('cfgResetBtn').addEventListener('click', () => {
-            Object.assign(_cfgState, CFG_DEFAULTS);
-            cfgApply(_cfgState);
-            const map = {
-                cfgSoundSize:    [_cfgState.soundSize,    'px',  0],
-                cfgSoundGap:     [_cfgState.soundGap,     'px',  0],
-                cfgSoundOffsetY: [_cfgState.soundOffsetY, 'px',  0],
-                cfgTitleSize:    [_cfgState.titleSize,    'rem', 2],
-                cfgTitleSpacing: [_cfgState.titleSpacing, 'px',  1],
-                cfgTitleOffsetY: [_cfgState.titleOffsetY, 'px',  0],
-                cfgBgBlur:       [_cfgState.bgBlur,       'px',  0],
-                cfgBgDark:       [_cfgState.bgDark,       '%',   0],
-            };
-            Object.entries(map).forEach(([id, [val, unit, dec]]) => {
-                const sl = document.getElementById(id);
-                const vl = document.getElementById(id + 'Val');
-                if (sl) sl.value = val;
-                if (vl) vl.textContent = val.toFixed(dec) + unit;
-            });
-        });
-
-        window._cfgTogglePanel = function () {
-            const isHidden = tab.classList.toggle('cfg-hidden');
-            if (isHidden) panel.classList.remove('cfg-open');
-        };
     }
 
     /* ── Cards ── */
@@ -549,7 +383,6 @@
     /* ── Init ── */
     function init() {
         buildDOM();
-        buildConfigPanel();
         bindCardClicks();
         initParallaxRelay();
     }
