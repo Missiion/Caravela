@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   ZEN ADS — Caravela HUB · Sistema de Duas Faces (v16)
+   ZEN ADS — Caravela HUB · Sistema de Duas Faces (v20)
    ═══════════════════════════════════════════════════════════════════════
    Detecção de adblock / Brave + etiquetas de anúncios + alternativas
    de baixa qualidade nos vídeos.
@@ -30,7 +30,7 @@
      activada — trocar de categoria já não a mostra; o refresh repõe)
      a explicar como desbloquear tudo.
 
-   DETECÇÃO (3 vias independentes; "protegido" se QUALQUER der
+   DETECÇÃO (v20 · 4 vias independentes; "protegido" se QUALQUER der
    positivo; nada conclusivo a tempo → assume-se PROTEGIDO — nunca
    limitamos a função por incerteza):
      1. BRAVE — API oficial do browser (navigator.brave.isBrave()).
@@ -40,6 +40,18 @@
         (pagead2.googlesyndication.com); as extensões bloqueiam-no ao
         nível da rede e o fetch falha. Timeout NÃO conta como bloqueio
         (rede lenta ≠ adblock).
+     4. SCRIPT BAIT (v20 · BUG FIREFOX) — o mesmo domínio de
+        publicidade, agora como tag <script> REAL. Motivo: no
+        Firefox as extensões (uBlock Origin incluído) bloqueiam o
+        adsbygoogle sobretudo como pedido de SCRIPT (as regras das
+        listas trazem o tipo $script) e DEIXAM PASSAR o fetch/
+        xmlhttprequest ao mesmo URL — resultado: o site via a face
+        desprotegida com adblock activo (no Edge/MV3 o bloqueio aplica-
+        se por padrão e o fetch chega a falhar; o Firefox segue o tipo
+        da regra ao rigor). Com a tag <script>, o pedido corre no
+        único tipo que TODOS os adblocks filtram — é a sua função
+        primária. onerror = bloqueio (ou erro de rede — mesma
+        semântica do FETCH BAIT); onload = domínio acessível.
 
    ETIQUETAS (lista real do Quintas, 2026-09): nos vídeos do
    ZEN_OPTIONS, `ads: true` = vídeo COM anúncio; omissão ou
@@ -66,7 +78,8 @@ var GLOBAL_TIMEOUT   = 5000;    // além disto: incerto → assume PROTEGIDO
 // ── Estado ──
 var state = {
     brave: false,        // o browser é Brave
-    adblock: false,      // bait escondido OU fetch bloqueado
+    adblock: false,      // bait escondido OU fetch bloqueado OU script
+                         // bloqueado (v20)
     resolved: false,     // detecção concluída
     protected: null,     // null = pendente · true/false = resultado
     notified: false      // notificação já mostrada nesta sessão de página
@@ -96,15 +109,25 @@ function detectBrave() {
 function baitCheck() {
     return new Promise(function(resolve) {
         var b = document.createElement('div');
+        // (v20) classes de isco clássicas + 4 extra (ad-unit, text-ad,
+        // ad-frame, sponsored-ad) — mais superfície para as listas
+        // de filtros esconderem (cobre bloqueadores só-cosméticos,
+        // e listas diferentes entre browsers/extensões)
         b.className = 'adsbox ad-banner ads ad-placement ad-slot ' +
-                      'ad-zone pub_300x250 advertisement';
+                      'ad-zone pub_300x250 advertisement ad-unit ' +
+                      'text-ad ad-frame sponsored-ad';
         b.style.cssText = 'position:absolute;left:-9999px;top:-9999px;' +
                           'width:1px;height:1px;pointer-events:none;';
         b.innerHTML = '&nbsp;';
         (document.body || document.documentElement).appendChild(b);
         setTimeout(function() {
             var cs = window.getComputedStyle(b);
+            // (v20) getClientRects(): lista VAZIA quando o elemento
+            // não é renderizado de todo (display:none e variantes via
+            // user stylesheets das extensões — padrão nos detectores
+            // clássicos de adblock)
             var hidden = b.offsetHeight === 0 || b.offsetWidth === 0 ||
+                         b.getClientRects().length === 0 ||
                          cs.display === 'none' || cs.visibility === 'hidden' ||
                          parseFloat(cs.opacity) === 0;
             if (b.parentNode) b.parentNode.removeChild(b);
@@ -151,9 +174,50 @@ function fetchCheck() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// 4. SCRIPT BAIT (v20 · BUG FIREFOX) — tag <script> REAL ao domínio
+//    de publicidade. No Firefox as extensões bloqueiam o adsbygoogle
+//    sobretudo como pedido de SCRIPT (regras $script das listas) e
+//    deixam passar o fetch/xmlhttprequest ao mesmo URL — por isso o
+//    FETCH BAIT sozinho não chega. Com a tag <script> o pedido corre
+//    no único tipo que TODOS os adblocks filtram (é a sua função
+//    primária: impedir os scripts de anúncio). onerror = bloqueio
+//    (ou erro de rede — mesma semântica do FETCH BAIT); onload =
+//    domínio acessível. Timeout NÃO conta (rede lenta ≠ adblock).
+//    A tag é REMOVIDA logo que resolve; se chegar a carregar, o
+//    adsbygoogle.js do Google executa UMA vez sem efeito (não há
+//    slots de anúncio nesta página) — e a página já depende do
+//    ecossistema YouTube/Google (iframe_api, gstatic, fonts).
+//    Requer CSP sem script-src restritivo — verificado no index.html
+//    (não há meta Content-Security-Policy; scripts de CDNs externos
+//    já carregam por todo o site).
+// ─────────────────────────────────────────────────────────────────────
+function scriptCheck() {
+    return new Promise(function(resolve) {
+        var s = document.createElement('script');
+        s.src = 'https://pagead2.googlesyndication.com/pagead/js/' +
+                'adsbygoogle.js?caravela-detect=' + Date.now();
+        s.async = true;
+        var done = false, to = null;
+        function finish(blocked) {
+            if (done) return;
+            done = true;
+            if (to) clearTimeout(to);
+            s.onload = s.onerror = null;
+            if (s.parentNode) s.parentNode.removeChild(s);
+            resolve(blocked);
+        }
+        to = setTimeout(function() { finish(false); },
+                        FETCH_TIMEOUT_MS);   // rede lenta ≠ adblock
+        s.onload  = function() { finish(false); };  // carregou → acessível
+        s.onerror = function() { finish(true);  };  // falhou  → bloqueio
+        (document.body || document.documentElement).appendChild(s);
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // COMBINAÇÃO — "protegido" = Brave OU adblock. Resolve CEDO se
 // qualquer via der positivo (o Brave resolve quase instantâneo; um
-// adblock bloqueia o fetch em milissegundos). Nada conclusivo a
+// adblock bloqueia o fetch/script em milissegundos). Nada conclusivo a
 // tempo → protegido (princípio: nunca limitar por incerteza).
 // ─────────────────────────────────────────────────────────────────────
 var readyResolve;
@@ -196,11 +260,12 @@ function detect() {
         if (b) settle(true);
         return b;
     });
-    var adblockP = Promise.all([baitCheck(), fetchCheck()]).then(function(r) {
-        state.adblock = !!(r[0] || r[1]);
-        if (state.adblock) settle(true);
-        return state.adblock;
-    });
+    var adblockP = Promise.all([baitCheck(), fetchCheck(), scriptCheck()])
+        .then(function(r) {
+            state.adblock = !!(r[0] || r[1] || r[2]);
+            if (state.adblock) settle(true);
+            return state.adblock;
+        });
     Promise.all([braveP, adblockP]).then(function(r) {
         settle(!!(r[0] || r[1]));
     });
