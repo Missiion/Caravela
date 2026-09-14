@@ -403,11 +403,20 @@ const STALL_CHECK_MS = 6000; // 1ª fase do timer do slot (ver armSlotTimer,
                              // sério: quando o problema é sistémico
                              // (bloqueio, não rede lenta), 5 tentativas
                              // custam ~5×6s em vez de 5×SLOT_TIMEOUT_MS.
-const SLOT_TIMEOUT_MS = 25000; // 2ª fase: só se chega aqui quando o player
+const SLOT_TIMEOUT_MS = 40000; // 2ª fase: só se chega aqui quando o player
                              // JÁ deu sinal de vida (está mesmo a
-                             // carregar/bufferizar) mas ainda não tocou —
-                             // aí sim vale a pena dar-lhe o tempo todo,
-                             // porque é rede lenta a sério.
+                             // carregar/bufferizar) mas ainda não tocou.
+                             // (v22.2: 25s → 40s) A era 4K endureceu o
+                             // arranque no Firefox: iframe sobredimensio-
+                             // nado + nocookie + cookies rejeitados =
+                             // handshakes de 15-35s (documentado em v13)
+                             // AGRAVADOS pelos manifestos 4K — um vídeo
+                             // SAUDÁVEL podia exceder os 25s, era morto
+                             // pelo guarda, e seis mortes seguidas
+                             // desligavam o zen (a espiral do LOCKOUT
+                             // que o reset do consecutiveErrors agora
+                             // corta). A 1ª fase (6s sem sinal)
+                             // continua a falhar rápido o BLOQUEADO.
 
 // ═══ POLÍTICA DE ÁUDIO POR BROWSER (compatibilidade Firefox) ═══
 // O Firefox é rígido onde o Chromium é tolerante: desmutar PROGRA-
@@ -869,15 +878,24 @@ setInterval(recoverQualityIfStable, 10000);
 // JANELA do iframe (px CSS) para escolher o tecto de qualidade —
 // com os slots ao tamanho exacto do ecrã, um monitor 1080p (ou 4K
 // com scaling 200% → CSS 1920) ensina-o a que "1080p chega".
-// Multiplicamos os slots por 2.25 (desktop com ponteiro fino):
-// o MESMO rectângulo 16:9 centrado (o excesso corta no overflow
-// hidden da camada — zero diferença visual), mas a janela interna
-// do player passa a ~4300px → o ABR liberta o máximo do vídeo
-// (hd2160/highres) assim que a largura de banda o permita. A folga
-// acima dos 3840px evita o arredondamento para baixo no limiar
-// exacto do 4K. Mobile/touch fica a 1× — pedir 4K a um telefone é
-// queimar bateria/dados sem ganho visível num ecrã pequeno.
-const PLAYER_OVERSAMPLE = 2.25;
+// Multiplicamos a janela de LAYOUT dos slots (2.1×, com tecto de
+// 4400px — v22.2) e devolvemos o RENDER ao tamanho natural via scale
+// (v22.1): o olho vê o cover de sempre, o ABR vê ~4032px num desktop
+// 1080p → liberta o máximo do vídeo (hd2160/highres) assim que a rede
+// deixar. A folga acima dos 3840px evita o arredondamento para baixo
+// no limiar exacto do 4K. Mobile/touch fica a 1× — pedir 4K a um
+// telefone é queimar bateria/dados sem ganho visível num ecrã pequeno.
+const PLAYER_OVERSAMPLE = 2.1;   // (v22.2: 2.25 → 2.1) acima dos 3840 do
+                                  // hd2160 com ~5% de folga — menos
+                                  // pixéis no iframe = arranque + composi-
+                                  // ção mais leves (os 4320px da v22.1
+                                  // pesavam no Firefox: frame-rate
+                                  // instável mesmo em máquinas fortes)
+const PLAYER_PX_CAP = 4400;       // (v22.2) tecto ABSOLUTO da janela de
+                                  // layout: em ecrãs 4K (CSS 3840+) o
+                                  // multiplicador daria iframes de
+                                  // 8000px — o hd2160 fica servido com
+                                  // ~4400 e poupam-se 4MP de composição
 const OVERSAMPLE_OK = (function() {
     try {
         return !!(window.matchMedia &&
@@ -896,23 +914,25 @@ function sizeCovers() {
     let w = W, h = W / AR;
     if (h < H) { h = H; w = H * AR; }
     const k = OVERSAMPLE_OK ? PLAYER_OVERSAMPLE : 1;   // (v22)
-    lastPlayerPx = [Math.round(w * k), Math.round(h * k)];
+    let pw = Math.round(w * k);
+    if (k > 1 && pw > PLAYER_PX_CAP) pw = PLAYER_PX_CAP;   // (v22.2)
+    const ph = Math.round(pw / AR);   // 16:9 EXACTO — o cover continua
+                                      // a ser um rectângulo 16:9
+    lastPlayerPx = [pw, ph];
     lastRenderPx = [Math.round(w), Math.round(h)];
-    // (v22.1 · LIÇÃO DE GEOMETRIA — o "zoom" que o Quintas viu na v22
-    // nua) O conteúdo do iframe É o vídeo: com o wrap a 4320px, o
-    // ecrã mostrava só o CENTRO dele (crop 2.25×). A combinação
-    // certa: LAYOUT grande + RENDER pequeno — width/height ficam a
-    // k× (é o que o ABR lê: TODAS as medições lá dentro do iframe
-    // são em px de layout, e transforms do PAI não as afetam
-    // minimamente) e o scale(1/k) devolve o desenho ao rectângulo
-    // cover de sempre (translate(-50%,-50%) já centrava; o scale
-    // corre sobre o transform-origin centro → w×h no ecrã, SEM
-    // crop e SEM distorção de ratio). Olho vê w×h · ABR vê w·k×h·k.
-    const tf = 'translate(-50%, -50%) scale(' + (1 / k) + ')';
+    // (v22.1 · LIÇÃO DE GEOMETRIA + v22.2 · escala EFECTIVA) LAYOUT
+    // grande + RENDER pequeno: width/height ficam acima do natural
+    // (é o que o ABR lê — todas as medições dentro do iframe são em
+    // px de LAYOUT, transforms do pai não as afetam) e o scale devolve
+    // o desenho ao rectângulo cover de sempre. A escala é derivada do
+    // COCIENTE REAL render/layout (não do k): com o tecto de 4400px
+    // um ecrã 4K fica em layout 4400 com render natural — o quociente
+    // certo mantém-se SEM crop e SEM distorção de ratio.
+    const tf = 'translate(-50%, -50%) scale(' + (w / pw) + ')';
     ['A', 'B'].forEach(function(s) {
         const el = coverEl(s);
-        el.style.width    = lastPlayerPx[0] + 'px';
-        el.style.height   = lastPlayerPx[1] + 'px';
+        el.style.width    = pw + 'px';
+        el.style.height   = ph + 'px';
         el.style.transform = tf;
     });
 }
@@ -1611,6 +1631,8 @@ function activateOption(opt) {
     // intenção de esconder a UI.
     readyToEngage = false;
     if (!zenOn) engagePending = false;
+    consecutiveErrors = 0;   // (v22.2) cinto-e-suspensórios do reset do
+                             // deactivateZen: sessão nova, orçamento novo
 
     // ÍCONE DE PAUSA desarmado: durante TODA a espera (roda a girar /
     // animação de selecção) o hover mostra sempre o ícone da CATEGORIA —
@@ -1686,6 +1708,14 @@ function deactivateZen() {
                               // depois do próximo 1.º fecho da UI
     videoQueue = [];          // (v11) a queue morre com a sessão — a
     queueIdx = 0;             // próxima activação volta a embaralhar
+    consecutiveErrors = 0;   // (v22.2 · LOCKOUT) o contador de falhas
+                              // SÓ zerava no PLAYING — depois da espiral
+                              // que desligou o zen, ficava ≥6 PARA
+                              // SEMPRE e a 1.ª hesitação de QUALQUER
+                              // sessão nova voltava a desligá-lo (o
+                              // "parou de funcionar de todo" no Firefox
+                              // do Quintas). Sessão nova = orçamento
+                              // novo de 6 falhas.
     clearRevealTimer('A');
     clearRevealTimer('B');
     clearApiWatchdog();   // desligou durante a carga da API → cancelar a
@@ -2958,7 +2988,7 @@ window._zenCtrl = {
             }
         } catch (e) {}
         return {
-            ver: 'v22.1',                 // confirma ficheiro vivo (cache?)
+            ver: 'v22.2',                 // confirma ficheiro vivo (cache?)
             mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
             activeSlot: activeSlot,
             playerPx: lastPlayerPx,       // (v22) janela de LAYOUT do player
