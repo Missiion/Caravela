@@ -840,8 +840,15 @@ function onQualityChange(slot, q) {
     const rank = qRank(q);
     // Pico atingido neste vídeo — subidas contam (aquecimento incluído)
     if (rank > slotPeakRank[slot]) slotPeakRank[slot] = rank;
-    // Qualidades ≥1080p: nada a fazer (nunca disparam o piso)
-    if (rank >= qRank('hd1080')) return;
+    // Qualidades ≥1080p: nunca disparam o piso — e 1080p ATINGIDO no
+    // slot ACTIVO é o sinal verde do oversample diferido (v22.4): o
+    // arranque já foi pago em janela natural, a janela grande só
+    // liberta o 4K a partir daqui, com o buffer já construído
+    if (rank >= qRank('hd1080')) {
+        if (slot === activeSlot && slotState[slot] === 'playing')
+            promoteSlotToMax(slot);
+        return;
+    }
     // SUBIDA INICIAL: o vídeo nunca atingiu 1080p — o YouTube está a
     // aquecer e sobe sozinho; intervir aqui cortava o 4K de quem tem
     // Internet boa. O piso só faz sentido depois de uma QUEDA.
@@ -873,23 +880,33 @@ function recoverQualityIfStable() {
 // O preço disto: um timer de 10s que quase sempre faz RETURN imediato
 setInterval(recoverQualityIfStable, 10000);
 
-// (v22 · SOBREDIMENSIONAMENTO DO PLAYER) O ABR do YouTube mede a
-// JANELA do iframe (px CSS) para escolher o tecto de qualidade —
-// com os slots ao tamanho exacto do ecrã, um monitor 1080p (ou 4K
-// com scaling 200% → CSS 1920) ensina-o a que "1080p chega".
-// Multiplicamos a janela de LAYOUT dos slots (2.1×, com tecto de
-// 4400px — v22.2) e devolvemos o RENDER ao tamanho natural via scale
-// (v22.1): o olho vê o cover de sempre, o ABR vê ~4032px num desktop
-// 1080p → liberta o máximo do vídeo (hd2160/highres) assim que a rede
-// deixar. A folga acima dos 3840px evita o arredondamento para baixo
-// no limiar exacto do 4K. Mobile/touch fica a 1× — pedir 4K a um
-// telefone é queimar bateria/dados sem ganho visível num ecrã pequeno.
+// (v22 · SOBREDIMENSIONAMENTO DO PLAYER — v22.4 DIFERIDO) O ABR do
+// YouTube mede a JANELA do iframe (px CSS) para escolher o tecto de
+// qualidade — com os slots ao tamanho exacto do ecrã, um monitor 1080p
+// (ou 4K com scaling 200% → CSS 1920) ensina-o a que "1080p chega".
+// Multiplicar a janela de LAYOUT (2.1×, tecto 4400px) e devolver o
+// RENDER ao tamanho natural via scale funciona (v22.1/v22.2)… mas as
+// v22–v22.3 pagavam o preço no ARRANQUE: janela 4K desde o 1.º frame
+// → o ABR escolhia hd2160 logo no arranque → 3-6× mais dados para
+// encher o buffer inicial → 15-30s de espera no Edge/Firefox (o
+// Chrome esconde-o com prefetch/decode acelerado). Era exactamente
+// a regressão de delay que a v17 tinha resolvido — o backup (delay
+// zero) nunca teve oversample.
+// (v22.4 · A LIÇÃO REAPRENDIDA) JANELA NATURAL ATÉ 1080p: cada slot
+// arranca a 1× (o ABR serve ~1080p, buffer inicial pequeno, arranque
+// rápido como no backup) e SÓ quando o vídeo ACTIVO atinge 1080p é
+// que a janela DELE é ampliada (promoteSlotToMax): o resize do
+// iframe faz o ABR re-avaliar o tecto em RUNTIME, com o buffer já
+// construído a 1080p — a subida para 4K acontece a tocar, sem tocar
+// no arranque. O oversample é POR SLOT e é RESETADO em cada vídeo
+// novo (createPlayer/loadVideoInto) — as trocas arrancam SEMPRE em
+// janela natural. Mobile/touch fica a 1× — pedir 4K a um telefone
+// é queimar bateria/dados sem ganho visível num ecrã pequeno.
 const PLAYER_OVERSAMPLE = 2.1;   // (v22.2: 2.25 → 2.1) acima dos 3840 do
                                   // hd2160 com ~5% de folga — menos
-                                  // pixéis no iframe = arranque + composi-
-                                  // ção mais leves (os 4320px da v22.1
-                                  // pesavam no Firefox: frame-rate
-                                  // instável mesmo em máquinas fortes)
+                                  // pixéis no iframe = composição mais
+                                  // leve (v22.4: e só DEPOIS de 1080p,
+                                  // nunca no arranque)
 const PLAYER_PX_CAP = 4400;       // (v22.2) tecto ABSOLUTO da janela de
                                   // layout: em ecrãs 4K (CSS 3840+) o
                                   // multiplicador daria iframes de
@@ -902,38 +919,65 @@ const OVERSAMPLE_OK = (function() {
                   Math.min(screen.width || 0, screen.height || 0) >= 700);
     } catch (e) { return false; }
 })();
-let lastPlayerPx = null;    // diagnóstico (qualityInfo → playerPx)
+const slotOversampled = { A: false, B: false };   // (v22.4) oversample
+                                  // activo POR SLOT — só o vídeo que
+                                  // JÁ atingiu 1080p e foi revelado
+const lastPlayerPx = { A: null, B: null };   // diagnóstico por slot
+                                  // (qualityInfo → playerPx do ACTIVO)
 let lastRenderPx = null;    // (v22.1) tamanho VISUAL pós-scale
 
-// Cobre o ecrã com 16:9 (o tamanho exacto é aplicado em px para os dois slots)
+// Cobre o ecrã com 16:9 (o tamanho exacto é aplicado em px para os dois
+// slots; desde a v22.4 cada slot tem a SUA janela — natural 1× durante
+// o arranque, 2.1× só depois de promovido)
 function sizeCovers() {
     const W = layer.clientWidth, H = layer.clientHeight;
     if (!W || !H) return;
     const AR = 16 / 9;
     let w = W, h = W / AR;
     if (h < H) { h = H; w = H * AR; }
-    const k = OVERSAMPLE_OK ? PLAYER_OVERSAMPLE : 1;   // (v22)
-    let pw = Math.round(w * k);
-    if (k > 1 && pw > PLAYER_PX_CAP) pw = PLAYER_PX_CAP;   // (v22.2)
-    const ph = Math.round(pw / AR);   // 16:9 EXACTO — o cover continua
-                                      // a ser um rectângulo 16:9
-    lastPlayerPx = [pw, ph];
     lastRenderPx = [Math.round(w), Math.round(h)];
-    // (v22.1 · LIÇÃO DE GEOMETRIA + v22.2 · escala EFECTIVA) LAYOUT
-    // grande + RENDER pequeno: width/height ficam acima do natural
-    // (é o que o ABR lê — todas as medições dentro do iframe são em
-    // px de LAYOUT, transforms do pai não as afetam) e o scale devolve
-    // o desenho ao rectângulo cover de sempre. A escala é derivada do
-    // COCIENTE REAL render/layout (não do k): com o tecto de 4400px
-    // um ecrã 4K fica em layout 4400 com render natural — o quociente
-    // certo mantém-se SEM crop e SEM distorção de ratio.
-    const tf = 'translate(-50%, -50%) scale(' + (w / pw) + ')';
+    // (v22.1 · LIÇÃO DE GEOMETRIA + v22.2 · escala EFECTIVA + v22.4 ·
+    // POR SLOT) LAYOUT grande + RENDER pequeno: width/height ficam
+    // acima do natural (é o que o ABR lê — todas as medições dentro do
+    // iframe são em px de LAYOUT, transforms do pai não as afetam) e o
+    // scale devolve o desenho ao rectângulo cover de sempre. A escala
+    // é derivada do COCIENTE REAL render/layout (não do k): com o
+    // tecto de 4400px um ecrã 4K fica em layout 4400 com render natural
+    // — o quociente certo mantém-se SEM crop e SEM distorção de ratio.
     ['A', 'B'].forEach(function(s) {
+        const k = (OVERSAMPLE_OK && slotOversampled[s]) ? PLAYER_OVERSAMPLE : 1;   // (v22.4)
+        let pw = Math.round(w * k);
+        if (k > 1 && pw > PLAYER_PX_CAP) pw = PLAYER_PX_CAP;   // (v22.2)
+        const ph = Math.round(pw / AR);   // 16:9 EXACTO — o cover
+                                          // continua a ser um
+                                          // rectângulo 16:9
+        lastPlayerPx[s] = [pw, ph];
         const el = coverEl(s);
         el.style.width    = pw + 'px';
         el.style.height   = ph + 'px';
-        el.style.transform = tf;
+        el.style.transform = 'translate(-50%, -50%) scale(' + (w / pw) + ')';
     });
+}
+
+// (v22.4 · OVERSAMPLE DIFERIDO) Amplia a janela de UM slot — chamado
+// no momento certo: o vídeo ATINGIU 1080p (o arranque já foi pago em
+// janela natural) e está ACTIVO (revelado — nunca em pré-carga, para
+// não queimar banda 4K invisível). O resize do iframe faz o ABR do
+// YouTube re-avaliar o tecto em RUNTIME; a preferência de máximo é
+// reafirmada meia volta depois (o player processa o novo tamanho de
+// forma assíncrona — ResizeObserver interno + postMessage).
+function promoteSlotToMax(slot) {
+    if (!OVERSAMPLE_OK || slotOversampled[slot]) return;   // já activo
+    slotOversampled[slot] = true;
+    sizeCovers();
+    const p = players[slot];
+    if (!p) return;
+    setTimeout(function() {
+        try {
+            if (players[slot] === p && slotState[slot] === 'playing')
+                applyPreferredQuality(p);
+        } catch (e) {}
+    }, 500);
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -1026,8 +1070,8 @@ function ensureIframeAllow(p) {
     try {
         const f = p && p.getIframe && p.getIframe();
         if (f) f.setAttribute('allow',
-            'accelerometer; autoplay; clipboard-write; encrypted-media; ' +
-            'gyroscope; picture-in-picture; web-share');
+            'accelerometer; autoplay; clipboard-write; compute-pressure; ' +
+            'encrypted-media; gyroscope; picture-in-picture; web-share');
     } catch (e) {}
 }
 
@@ -1036,6 +1080,13 @@ function ensureIframeAllow(p) {
 // existe apenas para que o 1.º clique encontre o iframe pronto e o
 // loadVideoById/playVideo corram SINCRONAMENTE dentro do gesto.
 function createPlayer(slot, video, idle, wantSound) {
+    // (v22.4) Janela NATURAL ANTES de o iframe nascer: um slot reciclado
+    // pode vir de um vídeo promovido (janela 4K ainda no DOM) — repor o
+    // cover AO NATURAL primeiro garante que o player NOVO nasce já com
+    // a janela de arranque (senão o ABR vê 4K logo no 1.º pedido e o
+    // delay volta nas trocas)
+    slotOversampled[slot] = false;
+    sizeCovers();
     const cover = coverEl(slot);
     cover.innerHTML = '';
     const ph = document.createElement('div');
@@ -1127,6 +1178,14 @@ function loadVideoInto(slot, video, wantSound) {
     resetQualityPeak(slot);   // (v17) vídeo novo no slot → o pico de
                               // qualidade recomeça (o auto-DASH parte
                               // sempre de baixo — não é queda)
+    slotOversampled[slot] = false;   // (v22.4) janela NATURAL no vídeo
+                              // novo — idem createPlayer (o reset aqui
+                              // cobre as TROCAS via loadVideoById, o
+                              // caminho mais comum do ENDED/shuffle)
+    sizeCovers();   // (v22.4 · apanhado pelo harness!) REDIMENSIONAR JÁ
+                    // o slot reciclado: sem isto, um slot promovido no
+                    // vídeo ANTERIOR carregava o novo com a janela 4K
+                    // HERDADA no DOM (o ABR via 4K no arranque)
     clearRevealTimer(slot);
     const p = players[slot];
     if (p && p.loadVideoById && pReady[slot]) {
@@ -1427,6 +1486,11 @@ function becomeActive(slot) {
     activeSlot = slot;
     activeVideoId = slotVideo[slot] ? slotVideo[slot].id : null;
     sizeCovers();
+    // (v22.4) O vídeo pode ter atingido 1080p ainda na pré-carga/
+    // pré-roll (invisível) — agora que é o ACTIVO revelado, o gate
+    // já passou: promover já (o caminho normal é o onQualityChange,
+    // mas este cobre o caso de o 1080p ter chegado ANTES do reveal)
+    if (slotPeakRank[slot] >= qRank('hd1080')) promoteSlotToMax(slot);
 
     // Primeira activação: fade-in da camada (a imagem de fundo fica por baixo)
     layer.classList.add('on');
@@ -2977,12 +3041,17 @@ window._zenCtrl = {
             }
         } catch (e) {}
         return {
-            ver: 'v22.3',                 // confirma ficheiro vivo (cache?)
+            ver: 'v22.4',                 // confirma ficheiro vivo (cache?)
             mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
             activeSlot: activeSlot,
-            playerPx: lastPlayerPx,       // (v22) janela de LAYOUT do player
-                                          // — o que o ABR do YouTube vê
-                                          // (~4320×2430 = 4K libertado)
+            oversampled: slotOversampled[activeSlot],   // (v22.4) janela
+                                          // grande já activa? (false durante
+                                          // o arranque = diferido a funcionar)
+            playerPx: lastPlayerPx[activeSlot],   // (v22.4) janela de LAYOUT
+                                          // do player ACTIVO — o que o ABR do
+                                          // YouTube vê (~4032×2268 depois de
+                                          // promovido = 4K libertado;
+                                          // ~1920×1080 durante o arranque)
             renderPx: lastRenderPx,       // (v22.1) tamanho VISUAL pós-scale
                                           // — o rectângulo cover real no ecrã
                                           // (~1920×1080; se diferir muito de
