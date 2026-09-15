@@ -417,6 +417,22 @@ const SLOT_TIMEOUT_MS = 25000; // 2ª fase: só se chega aqui quando o player
                              // para o próximo vídeo é melhor do que
                              // esperar 40s pelo que não vai tocar.)
 
+// (v22.5 · DIAGNÓSTICO) Trilha de tempos na consola: o histórico das
+// rondas de debugging mostrou que SEM timestamps dos eventos do motor,
+// cada log enviada obrigava a ADIVINHAR o que demorou (arranque?
+// timeout? troca? erro do player?). Uma linha por evento relevante
+// (activação, estados, timers, falhas, revelação) com o tempo relativo
+// desde o carregamento da página resolve o mistério de vez — o custo é
+// ~1 linha por evento, silencioso para o utilizador.
+const ZEN_VER = 'v22.5';
+const ZEN_T0  = Date.now();
+const YT_STATE_NAMES = { '-1': 'UNSTARTED', '0': 'ENDED', '1': 'PLAYING',
+                         '2': 'PAUSED', '3': 'BUFFERING', '5': 'CUED' };
+function zenLog(msg) {
+    try { console.info('[zen ' + ZEN_VER + '] +' +
+        ((Date.now() - ZEN_T0) / 1000).toFixed(1) + 's ' + msg); } catch (e) {}
+}
+
 // ═══ POLÍTICA DE ÁUDIO POR BROWSER (compatibilidade Firefox) ═══
 // O Firefox é rígido onde o Chromium é tolerante: desmutar PROGRA-
 // MATICAMENTE um player YouTube em autoplay muted FORA da janela de
@@ -838,17 +854,12 @@ function onQualityChange(slot, q) {
     if (slotState[slot] === 'idle' || slotState[slot] === 'stopped') return;
     if (!players[slot]) return;
     const rank = qRank(q);
+    zenLog('slot ' + slot + ' qualidade ' + q);   // (v22.5) a subida
+    // auto-DASH do aquecimento aparece aqui degrau a degrau
     // Pico atingido neste vídeo — subidas contam (aquecimento incluído)
     if (rank > slotPeakRank[slot]) slotPeakRank[slot] = rank;
-    // Qualidades ≥1080p: nunca disparam o piso — e 1080p ATINGIDO no
-    // slot ACTIVO é o sinal verde do oversample diferido (v22.4): o
-    // arranque já foi pago em janela natural, a janela grande só
-    // liberta o 4K a partir daqui, com o buffer já construído
-    if (rank >= qRank('hd1080')) {
-        if (slot === activeSlot && slotState[slot] === 'playing')
-            promoteSlotToMax(slot);
-        return;
-    }
+    // Qualidades ≥1080p: nunca disparam o piso
+    if (rank >= qRank('hd1080')) return;
     // SUBIDA INICIAL: o vídeo nunca atingiu 1080p — o YouTube está a
     // aquecer e sobe sozinho; intervir aqui cortava o 4K de quem tem
     // Internet boa. O piso só faz sentido depois de uma QUEDA.
@@ -880,33 +891,27 @@ function recoverQualityIfStable() {
 // O preço disto: um timer de 10s que quase sempre faz RETURN imediato
 setInterval(recoverQualityIfStable, 10000);
 
-// (v22 · SOBREDIMENSIONAMENTO DO PLAYER — v22.4 DIFERIDO) O ABR do
-// YouTube mede a JANELA do iframe (px CSS) para escolher o tecto de
-// qualidade — com os slots ao tamanho exacto do ecrã, um monitor 1080p
-// (ou 4K com scaling 200% → CSS 1920) ensina-o a que "1080p chega".
-// Multiplicar a janela de LAYOUT (2.1×, tecto 4400px) e devolver o
-// RENDER ao tamanho natural via scale funciona (v22.1/v22.2)… mas as
-// v22–v22.3 pagavam o preço no ARRANQUE: janela 4K desde o 1.º frame
-// → o ABR escolhia hd2160 logo no arranque → 3-6× mais dados para
-// encher o buffer inicial → 15-30s de espera no Edge/Firefox (o
-// Chrome esconde-o com prefetch/decode acelerado). Era exactamente
-// a regressão de delay que a v17 tinha resolvido — o backup (delay
-// zero) nunca teve oversample.
-// (v22.4 · A LIÇÃO REAPRENDIDA) JANELA NATURAL ATÉ 1080p: cada slot
-// arranca a 1× (o ABR serve ~1080p, buffer inicial pequeno, arranque
-// rápido como no backup) e SÓ quando o vídeo ACTIVO atinge 1080p é
-// que a janela DELE é ampliada (promoteSlotToMax): o resize do
-// iframe faz o ABR re-avaliar o tecto em RUNTIME, com o buffer já
-// construído a 1080p — a subida para 4K acontece a tocar, sem tocar
-// no arranque. O oversample é POR SLOT e é RESETADO em cada vídeo
-// novo (createPlayer/loadVideoInto) — as trocas arrancam SEMPRE em
-// janela natural. Mobile/touch fica a 1× — pedir 4K a um telefone
-// é queimar bateria/dados sem ganho visível num ecrã pequeno.
+// (v22 · SOBREDIMENSIONAMENTO DO PLAYER) O ABR do YouTube mede a
+// JANELA do iframe (px CSS) para escolher o tecto de qualidade — com
+// os slots ao tamanho exacto do ecrã, um monitor 1080p (ou 4K com
+// scaling 200% → CSS 1920) ensina-o a que "1080p chega". Multiplicar
+// a janela de LAYOUT (2.1×, tecto 4400px) e devolver o RENDER ao
+// tamanho natural via scale liberta o máximo do vídeo quando a rede
+// o permite (v22.1/v22.2). Mobile/touch fica a 1× — pedir 4K a um
+// telefone é queimar bateria/dados sem ganho visível num ecrã
+// pequeno.
+// (v22.5 · DIFERIDO REVERTIDO) A v22.4 adiava o oversample para
+// depois de 1080p na tentativa de curar a regressão do delay — o
+// teste real do Quintas provou que NÃO era isto: os 30s EXACTOS que
+// ele contou são 25s de SLOT_TIMEOUT + carga do substituto + pré-roll
+// (o vídeo travado morria no TIMEOUT, não na janela). Revertido a
+// pedido dele ao comportamento v22.2 (global, simples). As causas
+// reais dos 30s + da "troca misteriosa" estão no ZOMBIE do
+// handleVideoFailure (v22.5) e no throttle do IP (histórico v22.3).
 const PLAYER_OVERSAMPLE = 2.1;   // (v22.2: 2.25 → 2.1) acima dos 3840 do
                                   // hd2160 com ~5% de folga — menos
                                   // pixéis no iframe = composição mais
-                                  // leve (v22.4: e só DEPOIS de 1080p,
-                                  // nunca no arranque)
+                                  // leve
 const PLAYER_PX_CAP = 4400;       // (v22.2) tecto ABSOLUTO da janela de
                                   // layout: em ecrãs 4K (CSS 3840+) o
                                   // multiplicador daria iframes de
@@ -919,16 +924,13 @@ const OVERSAMPLE_OK = (function() {
                   Math.min(screen.width || 0, screen.height || 0) >= 700);
     } catch (e) { return false; }
 })();
-const slotOversampled = { A: false, B: false };   // (v22.4) oversample
-                                  // activo POR SLOT — só o vídeo que
-                                  // JÁ atingiu 1080p e foi revelado
-const lastPlayerPx = { A: null, B: null };   // diagnóstico por slot
-                                  // (qualityInfo → playerPx do ACTIVO)
+let lastPlayerPx = null;   // (v22.1) janela de LAYOUT do player (o que
+                                  // o ABR do YouTube vê) — diagnóstico
+                                  // (qualityInfo → playerPx)
 let lastRenderPx = null;    // (v22.1) tamanho VISUAL pós-scale
 
 // Cobre o ecrã com 16:9 (o tamanho exacto é aplicado em px para os dois
-// slots; desde a v22.4 cada slot tem a SUA janela — natural 1× durante
-// o arranque, 2.1× só depois de promovido)
+// slots — v22.5: janela GLOBAL, igual para ambos, como na v22.2)
 function sizeCovers() {
     const W = layer.clientWidth, H = layer.clientHeight;
     if (!W || !H) return;
@@ -936,48 +938,26 @@ function sizeCovers() {
     let w = W, h = W / AR;
     if (h < H) { h = H; w = H * AR; }
     lastRenderPx = [Math.round(w), Math.round(h)];
-    // (v22.1 · LIÇÃO DE GEOMETRIA + v22.2 · escala EFECTIVA + v22.4 ·
-    // POR SLOT) LAYOUT grande + RENDER pequeno: width/height ficam
-    // acima do natural (é o que o ABR lê — todas as medições dentro do
-    // iframe são em px de LAYOUT, transforms do pai não as afetam) e o
-    // scale devolve o desenho ao rectângulo cover de sempre. A escala
-    // é derivada do COCIENTE REAL render/layout (não do k): com o
-    // tecto de 4400px um ecrã 4K fica em layout 4400 com render natural
-    // — o quociente certo mantém-se SEM crop e SEM distorção de ratio.
+    // (v22.1 · LIÇÃO DE GEOMETRIA + v22.2 · escala EFECTIVA) LAYOUT
+    // grande + RENDER pequeno: width/height ficam acima do natural
+    // (é o que o ABR lê — todas as medições dentro do iframe são em
+    // px de LAYOUT, transforms do pai não as afetam) e o scale devolve
+    // o desenho ao rectângulo cover de sempre. A escala é derivada do
+    // COCIENTE REAL render/layout (não do k): com o tecto de 4400px um
+    // ecrã 4K fica em layout 4400 com render natural — o quociente
+    // certo mantém-se SEM crop e SEM distorção de ratio.
+    const k = OVERSAMPLE_OK ? PLAYER_OVERSAMPLE : 1;   // (v22.5: global)
+    let pw = Math.round(w * k);
+    if (k > 1 && pw > PLAYER_PX_CAP) pw = PLAYER_PX_CAP;   // (v22.2)
+    const ph = Math.round(pw / AR);   // 16:9 EXACTO — o cover continua
+                                      // a ser um rectângulo 16:9
+    lastPlayerPx = [pw, ph];
     ['A', 'B'].forEach(function(s) {
-        const k = (OVERSAMPLE_OK && slotOversampled[s]) ? PLAYER_OVERSAMPLE : 1;   // (v22.4)
-        let pw = Math.round(w * k);
-        if (k > 1 && pw > PLAYER_PX_CAP) pw = PLAYER_PX_CAP;   // (v22.2)
-        const ph = Math.round(pw / AR);   // 16:9 EXACTO — o cover
-                                          // continua a ser um
-                                          // rectângulo 16:9
-        lastPlayerPx[s] = [pw, ph];
         const el = coverEl(s);
         el.style.width    = pw + 'px';
         el.style.height   = ph + 'px';
         el.style.transform = 'translate(-50%, -50%) scale(' + (w / pw) + ')';
     });
-}
-
-// (v22.4 · OVERSAMPLE DIFERIDO) Amplia a janela de UM slot — chamado
-// no momento certo: o vídeo ATINGIU 1080p (o arranque já foi pago em
-// janela natural) e está ACTIVO (revelado — nunca em pré-carga, para
-// não queimar banda 4K invisível). O resize do iframe faz o ABR do
-// YouTube re-avaliar o tecto em RUNTIME; a preferência de máximo é
-// reafirmada meia volta depois (o player processa o novo tamanho de
-// forma assíncrona — ResizeObserver interno + postMessage).
-function promoteSlotToMax(slot) {
-    if (!OVERSAMPLE_OK || slotOversampled[slot]) return;   // já activo
-    slotOversampled[slot] = true;
-    sizeCovers();
-    const p = players[slot];
-    if (!p) return;
-    setTimeout(function() {
-        try {
-            if (players[slot] === p && slotState[slot] === 'playing')
-                applyPreferredQuality(p);
-        } catch (e) {}
-    }, 500);
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -1080,13 +1060,8 @@ function ensureIframeAllow(p) {
 // existe apenas para que o 1.º clique encontre o iframe pronto e o
 // loadVideoById/playVideo corram SINCRONAMENTE dentro do gesto.
 function createPlayer(slot, video, idle, wantSound) {
-    // (v22.4) Janela NATURAL ANTES de o iframe nascer: um slot reciclado
-    // pode vir de um vídeo promovido (janela 4K ainda no DOM) — repor o
-    // cover AO NATURAL primeiro garante que o player NOVO nasce já com
-    // a janela de arranque (senão o ABR vê 4K logo no 1.º pedido e o
-    // delay volta nas trocas)
-    slotOversampled[slot] = false;
-    sizeCovers();
+    zenLog('slot ' + slot + ' ← player NOVO ' + playbackVideoIdOf(video) +
+           (idle ? ' [pré-carga]' : ''));
     const cover = coverEl(slot);
     cover.innerHTML = '';
     const ph = document.createElement('div');
@@ -1133,7 +1108,7 @@ function createPlayer(slot, video, idle, wantSound) {
             },
             onStateChange: function(ev) { onState(slot, ev.data); },
             onPlaybackQualityChange: function(ev) { onQualityChange(slot, ev.data); },
-            onError: function() { onErrorEvt(slot); }
+            onError: function(ev) { onErrorEvt(slot, ev && ev.data); }
         }
     });
     players[slot]   = p;
@@ -1173,19 +1148,15 @@ function startPreload() {
 }
 
 function loadVideoInto(slot, video, wantSound) {
+    zenLog('slot ' + slot + ' ← ' + playbackVideoIdOf(video) +
+           (wantSound ? ' [com som]' : '') +
+           (video.start ? ' [start ' + video.start + 's]' : '') +
+           (video.end ? ' [end ' + video.end + 's]' : ''));
     slotVideo[slot] = video;
     slotState[slot] = 'loading';
     resetQualityPeak(slot);   // (v17) vídeo novo no slot → o pico de
                               // qualidade recomeça (o auto-DASH parte
                               // sempre de baixo — não é queda)
-    slotOversampled[slot] = false;   // (v22.4) janela NATURAL no vídeo
-                              // novo — idem createPlayer (o reset aqui
-                              // cobre as TROCAS via loadVideoById, o
-                              // caminho mais comum do ENDED/shuffle)
-    sizeCovers();   // (v22.4 · apanhado pelo harness!) REDIMENSIONAR JÁ
-                    // o slot reciclado: sem isto, um slot promovido no
-                    // vídeo ANTERIOR carregava o novo com a janela 4K
-                    // HERDADA no DOM (o ABR via 4K no arranque)
     clearRevealTimer(slot);
     const p = players[slot];
     if (p && p.loadVideoById && pReady[slot]) {
@@ -1235,11 +1206,17 @@ function armSlotTimer(slot) {
     slotTimers[slot] = setTimeout(function() {
         if (slotState[slot] !== 'loading') return;
         if (!slotSawSignal[slot]) {
+            zenLog('slot ' + slot + ' STALL-CHECK (' + (STALL_CHECK_MS / 1000) +
+                   's): player sem NENHUM sinal de vida → falha rápida');
             handleVideoFailure(slot);   // zero sinal → falha rápida
             return;
         }
         slotTimers[slot] = setTimeout(function() {
-            if (slotState[slot] === 'loading') handleVideoFailure(slot);
+            if (slotState[slot] === 'loading') {
+                zenLog('slot ' + slot + ' TIMEOUT (' + (SLOT_TIMEOUT_MS / 1000) +
+                       's de carga sem PLAYING) → falha (throttle do IP? rede?)');
+                handleVideoFailure(slot);
+            }
         }, SLOT_TIMEOUT_MS - STALL_CHECK_MS);
     }, STALL_CHECK_MS);
 }
@@ -1262,6 +1239,8 @@ function armApiWatchdog() {
         if (!zenOn) return;              // desligado entretanto
         if (ytReady) return;             // chegou entretanto (cb corre/vai correr)
         if (players.A || players.B) return;  // players existem → API ok
+        zenLog('WATCHDOG da API (' + (API_LOAD_TIMEOUT / 1000) +
+               's sem iframe_api) → desligar limpo');
         deactivateZen();                 // API indisponível → desligar limpo
     }, API_LOAD_TIMEOUT);
 }
@@ -1406,6 +1385,8 @@ function onState(slot, state) {
     // evento seu é irrelevante (erros do idle são tratados à parte no
     // onErrorEvt; as legendas já foram desmontadas no seu onReady)
     if (slotState[slot] === 'idle') return;
+    zenLog('slot ' + slot + ' ' + (YT_STATE_NAMES[String(state)] || ('estado ' + state)) +
+           ' [' + (slotVideo[slot] ? playbackVideoIdOf(slotVideo[slot]) : '?') + ']');
     slotSawSignal[slot] = true;   // qualquer evento real = player vivo
                                    // (ver armSlotTimer) — cobre também o
                                    // caso de loadVideoById num player já
@@ -1417,7 +1398,11 @@ function onState(slot, state) {
         killCaptions(players[slot]);
     }
     if (state === YT_PLAYING) {
-        if (slotState[slot] === 'stopped') return;   // evento obsoleto
+        // (v22.5 · ZOMBIE) slot já abandonado (falha com timeout/erro —
+        // ver handleVideoFailure/neutralizeSlot): um PLAYING tardio
+        // destes NUNCA pode revelar/re-activar o slot morto — era o que
+        // lhe roubava o ecrã ao vídeo actual ~30s depois de começar
+        if (slotState[slot] === 'stopped' || slotState[slot] === 'error') return;
         consecutiveErrors = 0;
         slotState[slot] = 'playing';
         clearSlotTimer(slot);
@@ -1485,12 +1470,8 @@ function loopSilently(slot) {
 function becomeActive(slot) {
     activeSlot = slot;
     activeVideoId = slotVideo[slot] ? slotVideo[slot].id : null;
+    zenLog('slot ' + slot + ' REVELADO [' + activeVideoId + ']');
     sizeCovers();
-    // (v22.4) O vídeo pode ter atingido 1080p ainda na pré-carga/
-    // pré-roll (invisível) — agora que é o ACTIVO revelado, o gate
-    // já passou: promover já (o caminho normal é o onQualityChange,
-    // mas este cobre o caso de o 1080p ter chegado ANTES do reveal)
-    if (slotPeakRank[slot] >= qRank('hd1080')) promoteSlotToMax(slot);
 
     // Primeira activação: fade-in da camada (a imagem de fundo fica por baixo)
     layer.classList.add('on');
@@ -1640,7 +1621,9 @@ function switchVideo() {
     playNextVideo(wantSound);
 }
 
-function onErrorEvt(slot) {
+function onErrorEvt(slot, code) {
+    zenLog('slot ' + slot + ' ERRO do YouTube ' + (code == null ? '?' : code) +
+           ' [' + (slotVideo[slot] ? slotVideo[slot].id : '?') + ']');
     // Erro do player de PRÉ-CARGA (nunca revelado, nunca pedido): apenas
     // marcar o vídeo como indisponível para o picker o evitar — sem
     // tocar no ciclo de falhas da activação em curso (noutro slot)
@@ -1659,6 +1642,25 @@ function onErrorEvt(slot) {
     handleVideoFailure(slot);
 }
 
+// (v22.5 · ZOMBIE) Matar um slot abandonado. SEM isto, o player de um
+// vídeo que falhou (timeout dos 25s / erro) continuava a CARREGAR em
+// fundo — invisível, mudo, ninguém à espera dele — e quando finalmente
+// atingia PLAYING (com o IP throttled do Quintas: 30-60s depois!) o
+// onState tratava-o como um vídeo novo legítimo ('loading' → 'playing',
+// reveal timer) e a sequência becomeActive() Roubava o ecrã ao vídeo
+// que já tocava: era exactamente o bug «o vídeo trocou sozinho ~30s
+// depois de começar». stopVideo + estado 'stopped' (+ timers limpos)
+// = o PLAYING tardio bate no guard do onState e é ignorado; e o
+// download concorrente — que roubava banda ao vídeo novo num IP já
+// depauperado (v22.3) — morre com ele.
+function neutralizeSlot(slot) {
+    clearSlotTimer(slot);
+    clearRevealTimer(slot);
+    slotState[slot] = 'stopped';
+    const p = players[slot];
+    if (p) { try { p.stopVideo(); } catch (e) {} }
+}
+
 function handleVideoFailure(slot) {
     if (!zenOn || !activeOption) return;
     // Rede de segurança do timer de 14s: slot já parado/tapado → não o
@@ -1667,12 +1669,19 @@ function handleVideoFailure(slot) {
     consecutiveErrors++;
     if (consecutiveErrors > 5) { deactivateZen(); return; }
     if (slot === activeSlot) {
-        // O vídeo activo morreu → carregar outro já no outro slot (crossfade)
+        // O vídeo activo morreu → NEUTRALIZAR o zombie ANTES de
+        // avançar (ver neutralizeSlot) e carregar outro já no outro
+        // slot (crossfade)
+        zenLog('FALHA do ACTIVO (erro nº' + consecutiveErrors +
+               ') → zombie morto, avança na queue');
+        neutralizeSlot(slot);
         playNextVideo();
     } else {
         // O vídeo em carregamento falhou → tentar outro no MESMO slot
         // (v11: o próximo da queue — o falhado fica em falha (TTL v17)
         // e é saltado até o TTL expirar)
+        zenLog('FALHA na carga (erro nº' + consecutiveErrors +
+               ') → tenta o próximo no MESMO slot');
         const video = serveNextVideo();
         if (!video) { notifyCategoryEmpty(); deactivateZen(); return; }
         loadVideoInto(slot, video);
@@ -1703,6 +1712,7 @@ function activateOption(opt) {
 
     zenOn = true;
     activeOption = opt;
+    zenLog('ACTIVAR "' + opt.id + '"');
 
     // (v15/v16 · DUAS FACES) sem adblock e sem Brave (JÁ confirmado
     // pela detecção): a notificação informativa aparece na 1.ª categoria
@@ -1760,6 +1770,7 @@ function activateOption(opt) {
 }
 
 function deactivateZen() {
+    zenLog('DESACTIVADO');
     zenOn = false;
     activeOption = null;
     activeVideoId = null;
@@ -3041,17 +3052,12 @@ window._zenCtrl = {
             }
         } catch (e) {}
         return {
-            ver: 'v22.4',                 // confirma ficheiro vivo (cache?)
+            ver: 'v22.5',                 // confirma ficheiro vivo (cache?)
             mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
             activeSlot: activeSlot,
-            oversampled: slotOversampled[activeSlot],   // (v22.4) janela
-                                          // grande já activa? (false durante
-                                          // o arranque = diferido a funcionar)
-            playerPx: lastPlayerPx[activeSlot],   // (v22.4) janela de LAYOUT
-                                          // do player ACTIVO — o que o ABR do
-                                          // YouTube vê (~4032×2268 depois de
-                                          // promovido = 4K libertado;
-                                          // ~1920×1080 durante o arranque)
+            playerPx: lastPlayerPx,       // (v22.1) janela de LAYOUT do
+                                          // player — o que o ABR do YouTube
+                                          // vê (~4032×2268 = 4K libertado)
             renderPx: lastRenderPx,       // (v22.1) tamanho VISUAL pós-scale
                                           // — o rectângulo cover real no ecrã
                                           // (~1920×1080; se diferir muito de
