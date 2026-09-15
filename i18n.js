@@ -97,6 +97,7 @@
             // _zenSyncLang; {n}/{total} são substituídos no código
             zenCheckTitle:       '\uD83D\uDCFA Video Check',
             zenCheckLoading:     'Loading the YouTube API...',
+            zenCheckWarming:     'Warming up players (first YouTube load can take ~30s)',
             zenCheckChecking:    'Checking',
             zenCheckCheckingBtn: 'Checking...',
             zenCheckAllOk:       'All {n} videos are online — everything is fine.',
@@ -105,7 +106,7 @@
             zenCheckApiFail:     'Could not load the YouTube API — check the connection.',
             zenCheckNoVideos:    'No videos to check.',
             zenCheckWarn:        'YouTube unreachable? Check network/adblock — every video failed.',
-            zenCheckNoResponse:  'No response within 15s',
+            zenCheckNoResponse:  'No response in time (retried once)',
 
             // (v15 · DUAS FACES — zen-ads.js) notificação para quem não
             // tem adblock nem Brave (fundo centro do ecrã, 10 segundos)
@@ -262,6 +263,7 @@
             // _zenSyncLang; {n}/{total} são substituídos no código
             zenCheckTitle:       '\uD83D\uDCFA Verificação de Vídeos',
             zenCheckLoading:     'A carregar a API do YouTube...',
+            zenCheckWarming:     'A aquecer os players (a 1ª carga do YouTube pode demorar ~30s)',
             zenCheckChecking:    'A verificar',
             zenCheckCheckingBtn: 'A verificar...',
             zenCheckAllOk:       'Todos os {n} vídeos estão online — está tudo bem.',
@@ -270,7 +272,7 @@
             zenCheckApiFail:     'Não foi possível carregar a API do YouTube — verifica a ligação.',
             zenCheckNoVideos:    'Não há vídeos para verificar.',
             zenCheckWarn:        'YouTube inacessível? Verifica a rede/adblock — todos os vídeos falharam.',
-            zenCheckNoResponse:  'Sem resposta em 15s',
+            zenCheckNoResponse:  'Sem resposta a tempo (re-verificado 1×)',
 
             // (v15 · DUAS FACES — zen-ads.js) notificação para quem não
             // tem adblock nem Brave (fundo centro do ecrã, 10 segundos)

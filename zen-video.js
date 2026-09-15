@@ -424,7 +424,31 @@ const SLOT_TIMEOUT_MS = 25000; // 2ª fase: só se chega aqui quando o player
 // (activação, estados, timers, falhas, revelação) com o tempo relativo
 // desde o carregamento da página resolve o mistério de vez — o custo é
 // ~1 linha por evento, silencioso para o utilizador.
-const ZEN_VER = 'v22.5';
+//
+// (v22.6 · SESSÕES FRIAS DO YOUTUBE) — a causa REAL dos delays, provada
+// pela log do Quintas (Edge + adblock, IP saudável, vídeos bons): a
+// 1.ª carga de CADA iframe/embed do YouTube leva 20-30s a ficar
+// FUNCIONAL (o leilão de anúncios dentro do embed fica pendurado nos
+// pedidos bloqueados pelo adblock + o bootstrap do youtube-nocookie),
+// e um loadVideoById pedido DENTRO dessa janela fica preso em
+// UNSTARTED (nem BUFFERING dispara — os eventos de qualidade provam
+// que o player está vivo) até a sessão resolve. EVIDÊNCIA na log:
+//   • iuhXwVNdz4w (player de 1.4s, activado de imediato): BUFFERING →
+//     UNSTARTED → preso → TIMEOUT aos 25s;
+//   • wmLGG5DYDWQ (player NOVO): UNSTARTED, e 21.6s SEM UM ÚNICO
+//     evento até à qualidade hd1440 → TIMEOUT;
+//   • iEzhkRQYJnk (MESMO player, reutilizado via loadVideoById):
+//     BUFFERING → PLAYING em 4.6s. ✓ Uma sessão JÁ aquecida é rápida.
+// Por isso o 1.º vídeo tocava bem (o player A pré-carregado no arranque
+// aquecia enquanto o visitante navegava) mas o SEGUINDO levava 30s+
+// (o slot B nascia a FRIO no 1.º ENDED → 25s de timeout + substituto
+// + pré-roll). FIX v22.6: aquecer AMBOS os slots no arranque (ver
+// startPreload) + verificador com POOL de players aquecidos (ver
+// runCheckPool). O SLOT_TIMEOUT_MS mantém-se nos 25s — com os dois
+// slots quentes, a janela fria residual (activar nos primeiros ~30s
+// de página) auto-resolve-se num único ciclo e já não volta a
+// acontecer nas trocas seguintes.
+const ZEN_VER = 'v22.6';
 const ZEN_T0  = Date.now();
 const YT_STATE_NAMES = { '-1': 'UNSTARTED', '0': 'ENDED', '1': 'PLAYING',
                          '2': 'PAUSED', '3': 'BUFFERING', '5': 'CUED' };
@@ -1144,6 +1168,28 @@ function startPreload() {
         const video = randomVideoOf(opt);
         if (!video) return;
         createIdlePlayer('A', video, opt);
+        // (v22.6 · AQUECIMENTO DO SLOT B — o fix do «próximo vídeo demora
+        // 30s+») Ver «SESSÕES FRIAS DO YOUTUBE» junto ao ZEN_VER: a 1.ª
+        // carga de QUALQUER iframe do YouTube leva 20-30s a ficar
+        // funcional, e um player usado DENTRO dessa janela fica preso em
+        // UNSTARTED → TIMEOUT dos 25s → FALHA. Sem isto, o 1.º ENDED criava
+        // o player do slot B A FRIO e o próximo vídeo sofria exactamente
+        // esse ciclo (25s de timeout + substituto + pré-roll ≈ os 30s+
+        // reportados). Com o B a nascer no arranque (igual ao A), a
+        // sessão dele aquece EM PARALELO com a navegação do visitante —
+        // quando o 1.º vídeo termina, o loadVideoById do próximo cai num
+        // player JÁ funcional → 3-5s. Cobre TAMBÉM a 1.ª activação sem HIT
+        // de pré-carga (activateOption → otherSlot('A') = 'B' → loadVideo
+        // Into reutiliza este player) e todas as trocas manuais.
+        // O vídeo aqui em cue é IRRELEVANTE (nunca toca — é sempre
+        // substituído pelo loadVideoInto antes de qualquer reprodução);
+        // só o bootstrap da sessão interessa. Custo extra: ZERO — o slot
+        // B acabaria por ter um player de qualquer forma (no 1.º ENDED);
+        // este aquecimento apenas ANTECIPA-o para o momento em que não
+        // incomoda ninguém (idle = parado no poster, sem streaming).
+        const warmVideo = (opt.videos.length > 1)
+            ? (randomVideoOf(opt) || video) : video;
+        createPlayer('B', warmVideo, true);
     });
 }
 
@@ -1575,6 +1621,11 @@ function becomeActive(slot) {
         // Se o slot antigo foi REUTILIZADO para um carregamento pendente
         // (troca rápida), NÃO o parar — o seu próprio reveal tratará dele
         if (slotState[old] === 'loading') return;
+        // (v22.6) Um slot em AQUECIMENTO (idle — nunca tocado, parado no
+        // poster desde o arranque) também NÃO se toca: stopVideo não
+        // acrescenta nada (já está parado) e a sessão quente fica
+        // intacta para o 1.º ENDED que a venha a usar (ver startPreload)
+        if (slotState[old] === 'idle') return;
         if (players[old]) { try { players[old].stopVideo(); } catch (e) {} }
         slotState[old] = 'stopped';
     }, STOP_OLD_MS);
@@ -2182,15 +2233,30 @@ volSlider.addEventListener('input', function() {
 // observando a resposta REAL do YouTube:
 //   • BUFFERING/PLAYING            → ONLINE (existe e transmite)
 //   • onError 2/5/100/101/150      → offline, com o motivo exacto
-//   • 15s sem qualquer resposta    → timeout (rede lenta/bloqueada)
+//   • sem resposta a tempo          → re-verificado 1×; persistindo,
+//                                     timeout (sessão pendurada)
+// (v22.6 · POOL AQUECIDO) Cada mini-player deixou de ser descartável:
+// a 1.ª carga de CADA iframe do YouTube leva 20-30s a ficar funcional
+// («SESSÕES FRIAS» — ver ZEN_VER: leilão de anúncios bloqueado pelo
+// adblock + bootstrap do youtube-nocookie), pelo que criar um player
+// NOVO por vídeo condenava quase TODOS ao timeout dos 15s — eram os
+// «vídeos em erro que nunca são os mesmos» do Quintas: aleatoriedade
+// da duração da sessão fria, NÃO dos vídeos (no youtube.com todos
+// tocavam bem). Agora cada worker do pool NASCE com um dos primeiros
+// vídeos (o aquecimento JÁ É a 1.ª verificação — espera até
+// CHECK_WARMUP_MS, 40s, muito para lá da sessão fria típica) e depois
+// é REUTILIZADO para os restantes via loadVideoById — a quente, cada
+// verificação demora 1-5s (prova: iEzhkRQYJnk, 4.6s até PLAYING).
 // Se algum vídeo falhar, o website gera e descarrega AUTOMATICAMENTE
 // um relatório .txt ORGANIZADO (categoria · título real do vídeo ·
 // link directo · motivo). Se estiver tudo bem, uma mensagem simples
 // diz-o. Se TODOS falharem, o relatório/overlay avisam que o mais
 // provável é o YouTube estar inalcançável (rede/adblock) — e não
 // que todos os vídeos morreram.
-const CHECK_POOL    = 3;      // mini-players em paralelo
-const CHECK_TIMEOUT = 15000;  // por vídeo
+const CHECK_POOL      = 3;      // mini-players em paralelo (REUTILIZADOS)
+const CHECK_TIMEOUT   = 15000;  // por vídeo, em player JÁ aquecido
+const CHECK_WARMUP_MS = 40000;  // 1.ª carga de cada mini-player (sessão
+                                // fria — 20-30s típicos, 40s com margem)
 const YT_ERR_TEXT = {
     2:   'Invalid video ID (error 2)',
     5:   'HTML5 player error (error 5)',
@@ -2208,6 +2274,7 @@ let lastCheckReport = '';     // último relatório gerado (debug/consola)
 let checkLabels = {
     title:        '\uD83D\uDCFA Video Check',
     loading:      'Loading the YouTube API...',
+    warming:      'Warming up players (first YouTube load can take ~30s)',
     checking:     'Checking',
     checkingBtn:  'Checking...',
     allOk:        'All {n} videos are online — everything is fine.',
@@ -2216,7 +2283,7 @@ let checkLabels = {
     apiFail:      'Could not load the YouTube API — check the connection.',
     noVideos:     'No videos to check.',
     warn:         'YouTube unreachable? Check network/adblock — every video failed.',
-    timeoutReason:'No response within 15s'
+    timeoutReason:'No response in time (retried once)'
 };
 function checkFill(key, n, total) {
     return checkLabels[key].replace('{n}', n).replace('{total}', total);
@@ -2293,6 +2360,15 @@ function runVideoCheck() {
     }, API_LOAD_TIMEOUT + 4000);
 }
 
+// (v22.6 · POOL AQUECIDO) Máquina de estados do verificador: N workers
+// (CHECK_POOL), cada um com o SEU mini-player que NASCE com um vídeo da
+// fila (aquecimento = 1.ª verificação, com o orçamento generoso de
+// CHECK_WARMUP_MS) e depois é REUTILIZADO via loadVideoById (a quente:
+// 1-5s por vídeo). Timeout a quente → o vídeo é re-verificado 1× (não
+// há penalidade para o worker); iframe em estado estranho → reciclado
+// (dropWorker) e renasce com o próximo vídeo da fila. Guardas de
+// identidade (w.player !== p) garantem que eventos TARDIOS de players
+// já reciclados nunca resolvem a verificação ERRADA.
 function runCheckPool(tasks) {
     const results = [];
     const host = document.createElement('div');
@@ -2301,68 +2377,166 @@ function runCheckPool(tasks) {
         'position:fixed;left:-9999px;top:0;width:320px;height:540px;' +
         'pointer-events:none;overflow:hidden;';
     document.body.appendChild(host);
-    let next = 0, done = 0, active = 0;
+    const N = Math.min(CHECK_POOL, tasks.length);
+    const queue = tasks.map(function(t) { return { task: t, retried: false }; });
+    let done = 0;
+    const workers = [];
+    for (let i = 0; i < N; i++) {
+        workers.push({ player: null, div: null, item: null, warm: false });
+    }
 
     function updateProgress(task) {
-        if (checkStatus) checkStatus.textContent =
-            checkLabels.checking + ' ' + done + '/' + tasks.length +
-            ' — ' + task.opt.name;
+        const booting = workers.some(function(w) {
+            return w.item && !w.warm;    // alguém ainda no aquecimento
+        });
+        if (checkStatus) checkStatus.textContent = booting
+            ? checkLabels.warming + ' (' + done + '/' + tasks.length + ')'
+            : checkLabels.checking + ' ' + done + '/' + tasks.length +
+              ' — ' + task.opt.name;
         if (checkBarFill) {
-            checkBarFill.style.width = Math.round(done / tasks.length * 100) + '%';
+            checkBarFill.style.width =
+                Math.round(done / tasks.length * 100) + '%';
         }
     }
 
-    function checkOne(task) {
+    function record(item, status, code, player) {
+        let title = '';
+        try {
+            const vd = player && player.getVideoData && player.getVideoData();
+            if (vd) title = vd.title || '';
+        } catch (e) {}
+        results.push({ cat: item.task.opt.name, id: item.task.video.id,
+                       title: title, status: status, code: code });
+        done++;
+        updateProgress(item.task);
+    }
+
+    function settle(w, status, code) {
+        if (!w.item) return;         // já resolvido (evento tardio)
+        clearTimeout(w.timer); w.timer = null;
+        const item = w.item;
+        w.item = null;               // worker volta a ficar LIVRE
+        try { if (w.player && w.player.stopVideo) w.player.stopVideo(); }
+        catch (e) {}                // para o streaming — o pool fica vivo
+        record(item, status, code, w.player);
+        pump();
+    }
+
+    // Reciclar um worker: iframe destruído, div removida, pronto a
+    // NASCE de novo (bootWorker) com o próximo vídeo da fila
+    function dropWorker(w) {
+        if (w.timer) { clearTimeout(w.timer); w.timer = null; }
+        w.item = null;
+        try { if (w.player && w.player.destroy) w.player.destroy(); }
+        catch (e) {}
+        if (w.div && w.div.parentNode) w.div.parentNode.removeChild(w.div);
+        w.player = null; w.div = null; w.warm = false;
+    }
+
+    // Sem resposta a tempo: o vídeo ganha (1×) re-verificação; se já
+    // teve, fica registado como timeout. O worker é sempre reciclado —
+    // um player que não respondeu deixou de ser de confiança.
+    function onTimeout(w) {
+        const item = w.item;
+        if (!item) return;
+        dropWorker(w);
+        if (!item.retried) {
+            item.retried = true;
+            queue.push(item);
+            zenLog('verificação: timeout [' + item.task.video.id +
+                   '] → re-verificar (1×)');
+        } else {
+            record(item, 'timeout', 0, null);
+            zenLog('verificação: timeout [' + item.task.video.id +
+                   '] → erro final');
+        }
+        pump();
+    }
+
+    // Worker SEM player: iframe NOVO com o vídeo da fila — a sessão
+    // fria aquece (20-30s típicos) e o 1.º BUFFERING/PLAYING/ERRO
+    // resolve logo a verificação deste vídeo
+    function bootWorker(w, item) {
+        w.item = item;
+        w.timer = setTimeout(function() { onTimeout(w); }, CHECK_WARMUP_MS);
         const div = document.createElement('div');
         div.style.cssText = 'width:320px;height:180px;';
         host.appendChild(div);
-        let settled = false, player = null;
-        const to = setTimeout(function() { settle('timeout', 0); }, CHECK_TIMEOUT);
-        function settle(status, code) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(to);
-            let title = '';
-            try {
-                const vd = player.getVideoData && player.getVideoData();
-                if (vd) title = vd.title || '';
-            } catch (e) {}
-            results.push({ cat: task.opt.name, id: task.video.id, title: title,
-                           status: status, code: code });
-            done++; active--;
-            try { if (player && player.destroy) player.destroy(); } catch (e) {}
-            if (div.parentNode) div.parentNode.removeChild(div);
-            updateProgress(task);
+        w.div = div;
+        let p = null;                // identidade do player deste boot
+        try {
+            p = new YT.Player(div, {
+                width: '320', height: '180',
+                videoId: item.task.video.id,
+                host: 'https://www.youtube-nocookie.com',   // v13: consistente
+                              // com createPlayer — sem isto o verificador
+                              // testava um cenário (cookies de youtube.com)
+                              // diferente do que os visitantes realmente
+                              // recebem
+                playerVars: { autoplay: 1, mute: 1, controls: 0, disablekb: 1,
+                              rel: 0, fs: 0, iv_load_policy: 3, playsinline: 1,
+                              cc_load_policy: 0, origin: window.location.origin },
+                events: {
+                    onStateChange: function(ev) {
+                        if (w.player !== p) return;   // player já reciclado
+                        // BUFFERING(3)/PLAYING(1) → o vídeo EXISTE e transmite
+                        if (ev.data === 1 || ev.data === 3) {
+                            w.warm = true;            // sessão funcional
+                            settle(w, 'ok', 0);
+                        }
+                    },
+                    onError: function(ev) {
+                        if (w.player !== p) return;
+                        w.warm = true;   // o erro é do VÍDEO — a sessão em
+                                          // si aqueceu e serve para os próximos
+                        settle(w, 'error', ev.data);
+                    }
+                }
+            });
+            w.player = p;
+        } catch (e) {                // YT.Player lançou → reciclar + re-tentar
+            dropWorker(w);
+            if (!item.retried) { item.retried = true; queue.push(item); }
+            else record(item, 'error', 0, null);
             pump();
         }
-        player = new YT.Player(div, {
-            width: '320', height: '180',
-            videoId: task.video.id,
-            host: 'https://www.youtube-nocookie.com',   // v13: consistente
-                          // com createPlayer — sem isto o verificador
-                          // testava um cenário (cookies de youtube.com)
-                          // diferente do que os visitantes realmente
-                          // recebem
-            playerVars: { autoplay: 1, mute: 1, controls: 0, disablekb: 1,
-                          rel: 0, fs: 0, iv_load_policy: 3, playsinline: 1,
-                          cc_load_policy: 0, origin: window.location.origin },
-            events: {
-                onStateChange: function(ev) {
-                    // BUFFERING(3)/PLAYING(1) → o vídeo EXISTE e transmite
-                    if (ev.data === 1 || ev.data === 3) settle('ok', 0);
-                },
-                onError: function(ev) { settle('error', ev.data); }
-            }
-        });
+    }
+
+    // Worker AQUECIDO: loadVideoById directo (1-5s por vídeo)
+    function startCheck(w, item) {
+        w.item = item;
+        w.timer = setTimeout(function() { onTimeout(w); }, CHECK_TIMEOUT);
+        try {
+            w.player.loadVideoById(item.task.video.id);
+            w.player.playVideo();
+        } catch (e) {                // player em estado estranho → reciclar
+            dropWorker(w);
+            if (!item.retried) { item.retried = true; queue.push(item); }
+            else record(item, 'error', 0, null);
+            pump();
+        }
     }
 
     function pump() {
-        if (done >= tasks.length) { finishCheck(results, host); return; }
-        while (active < CHECK_POOL && next < tasks.length) {
-            active++;
-            checkOne(tasks[next++]);
+        if (done >= tasks.length) { finishRun(); return; }
+        while (queue.length) {
+            let free = null;
+            for (let i = 0; i < workers.length; i++) {
+                if (!workers[i].item) { free = workers[i]; break; }
+            }
+            if (!free) return;       // todos ocupados (settles chamam pump)
+            const item = queue.shift();
+            if (free.player) startCheck(free, item);
+            else bootWorker(free, item);
         }
     }
+
+    function finishRun() {
+        workers.forEach(function(w) { dropWorker(w); });
+        finishCheck(results, host);
+    }
+
+    updateProgress(tasks[0]);
     pump();
 }
 
@@ -2427,7 +2601,8 @@ function buildCheckReport(results, failed, allFailed) {
             L.push(' [OFFLINE] ' + (r.title ? r.title : '(no title)'));
             L.push('           https://youtu.be/' + r.id);
             if (r.status === 'timeout') {
-                L.push('           Reason: no response within 15s (slow or blocked network)');
+                L.push('           Reason: no response in time, retried once' +
+                       ' (hung embed session — network/adblock)');
             } else {
                 L.push('           Reason: ' +
                        (YT_ERR_TEXT[r.code] || ('player error ' + r.code)));
@@ -2533,6 +2708,7 @@ window._zenSyncLang = function(t) {
     // verificar — para não atropelar o estado "A verificar...") ──
     if (t.zenCheckTitle)       checkLabels.title         = t.zenCheckTitle;
     if (t.zenCheckLoading)     checkLabels.loading       = t.zenCheckLoading;
+    if (t.zenCheckWarming)    checkLabels.warming       = t.zenCheckWarming;
     if (t.zenCheckChecking)    checkLabels.checking      = t.zenCheckChecking;
     if (t.zenCheckCheckingBtn) checkLabels.checkingBtn   = t.zenCheckCheckingBtn;
     if (t.zenCheckAllOk)       checkLabels.allOk         = t.zenCheckAllOk;
@@ -3052,7 +3228,7 @@ window._zenCtrl = {
             }
         } catch (e) {}
         return {
-            ver: 'v22.5',                 // confirma ficheiro vivo (cache?)
+            ver: 'v22.6',                 // confirma ficheiro vivo (cache?)
             mode: qualityMode,            // 'max' (nunca corta) | 'floor' (1080)
             activeSlot: activeSlot,
             playerPx: lastPlayerPx,       // (v22.1) janela de LAYOUT do
